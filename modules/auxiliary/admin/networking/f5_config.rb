@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
 class MetasploitModule < Msf::Auxiliary
   include Msf::Auxiliary::F5
 
@@ -17,6 +16,11 @@ class MetasploitModule < Msf::Auxiliary
         },
         'License' => MSF_LICENSE,
         'Author' => ['h00die'],
+        'Notes' => {
+          'Stability' => [],
+          'SideEffects' => [],
+          'Reliability' => []
+        }
       )
     )
 
@@ -27,7 +31,6 @@ class MetasploitModule < Msf::Auxiliary
         Opt::RPORT(22)
       ]
     )
-
   end
 
   def run

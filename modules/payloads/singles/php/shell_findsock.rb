@@ -3,8 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/base/sessions/command_shell'
-require 'msf/base/sessions/command_shell_options'
 
 module MetasploitModule
 
@@ -78,7 +76,7 @@ END_OF_PHP_CODE
   #
   # Constructs the payload
   #
-  def generate
+  def generate(_opts = {})
     return php_findsock
   end
 end

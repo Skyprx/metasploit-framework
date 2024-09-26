@@ -1,5 +1,4 @@
 # -*- coding: binary -*-
-require 'msf/base'
 require 'securerandom'
 
 module Msf
@@ -42,7 +41,7 @@ class EncryptedShell < Msf::Sessions::CommandShell
     self.class.type = "Encrypted"
   end
 
-  def process_autoruns(datastore)
+  def bootstrap(datastore = {}, handler = nil)
     @key = datastore[:key] || datastore['ChachaKey']
     nonce = datastore[:nonce] || datastore['ChachaNonce']
     @iv = nonce
@@ -71,6 +70,8 @@ class EncryptedShell < Msf::Sessions::CommandShell
     @key = new_key
     @iv = new_nonce
     @chacha_cipher.reset_cipher(@key, @iv)
+
+    super(datastore, handler)
   end
 
   ##
@@ -80,6 +81,8 @@ class EncryptedShell < Msf::Sessions::CommandShell
   #
   def shell_read(length=-1, timeout=1)
     rv = rstream.get_once(length, timeout)
+    # Needed to avoid crashing the +chacha20_crypt+ method
+    return nil unless rv
     decrypted = @chacha_cipher.chacha20_crypt(rv)
     framework.events.on_session_output(self, decrypted) if decrypted
 

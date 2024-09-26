@@ -3,13 +3,10 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/base/sessions/meterpreter_x86_win'
-require 'msf/base/sessions/meterpreter_options'
-require 'rex/payloads/meterpreter/config'
 
 module MetasploitModule
 
-  CachedSize = 176220
+  CachedSize = 177244
 
   include Msf::Payload::TransportConfig
   include Msf::Payload::Windows
@@ -58,8 +55,8 @@ module MetasploitModule
       transports: [transport_config_reverse_https(opts)],
       extensions: (datastore['EXTENSIONS'] || '').split(','),
       ext_init:   (datastore['EXTINIT'] || ''),
-      stageless:  true
-    }
+      stageless:  true,
+    }.merge(meterpreter_logging_config(opts))
 
     # create the configuration instance based off the parameters
     config = Rex::Payloads::Meterpreter::Config.new(config_opts)

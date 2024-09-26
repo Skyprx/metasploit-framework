@@ -1,5 +1,4 @@
 # -*- coding: binary -*-
-require 'rex/payloads/meterpreter/config'
 
 module Msf::Payload::Android
 
@@ -104,7 +103,7 @@ module Msf::Payload::Android
     cert.not_after = Time.at(0x78045d81 + rand(0x7fffffff - 0x78045d81))
 
     # If this line is left out, signature verification fails on OSX.
-    cert.sign(key, OpenSSL::Digest::SHA1.new)
+    cert.sign(key, OpenSSL::Digest.new('SHA1'))
 
     jar.sign(key, cert, [cert])
   end
@@ -128,7 +127,13 @@ module Msf::Payload::Android
       [ "AndroidManifest.xml" ],
       [ "resources.arsc" ]
     ]
-    jar.add_files(files, MetasploitPayloads.path("android", "apk"))
+
+    files.each do |file|
+      path = ['android', 'apk', file].flatten.join('/')
+      contents = ::MetasploitPayloads.read(path)
+      jar.add_file(file.join('/'), contents)
+    end
+
     jar.add_file("classes.dex", fix_dex_header(classes))
     jar.build_manifest
 

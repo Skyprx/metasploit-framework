@@ -1,6 +1,5 @@
 # -*- coding: binary -*-
 
-require 'rex/payloads/meterpreter/uri_checksum'
 
 module Msf
 
@@ -30,7 +29,7 @@ module Payload::Windows::ReverseWinHttps
   #
   # Generate the first stage
   #
-  def generate
+  def generate(_opts = {})
 
     verify_cert_hash = get_ssl_cert_hash(datastore['StagerVerifySSLCert'],
                                          datastore['HandlerSSLCert'])

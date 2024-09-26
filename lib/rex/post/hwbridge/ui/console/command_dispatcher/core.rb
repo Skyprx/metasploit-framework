@@ -1,7 +1,6 @@
 # -*- coding: binary -*-
 require 'set'
 require 'rex/post/hwbridge'
-require 'rex/parser/arguments'
 
 module Rex
 module Post
@@ -197,7 +196,7 @@ class Console::CommandDispatcher::Core
   def cmd_status_help
     print_line("Usage: status")
     print_line
-    print_line "Retrives the devices current status and statistics"
+    print_line "Retrieves the devices current status and statistics"
   end
 
   #
@@ -221,7 +220,7 @@ class Console::CommandDispatcher::Core
     print_status("HW Version: #{status['hw_version']}") if status.key? 'hw_version'
     print_status("Uptime: #{stats['uptime']} seconds") if stats.key? 'uptime'
     print_status("Packets Sent: #{stats['packet_stats']}") if stats.key? 'packet_stats'
-    print_status("Last packet Sent: #{Time.at(stats['last_request'])}") if stats.key? 'last_request'
+    print_status("Last packet Sent: #{::Time.at(stats['last_request'])}") if stats.key? 'last_request'
     print_status("Voltage: #{stats['voltage']}") if stats.key? 'voltage' and not stats['voltage'] == 'not supported'
   end
 
@@ -573,7 +572,7 @@ protected
   end
 
   def tab_complete_postmods
-    tabs = client.framework.modules.post.map { |name, klass|
+    tabs = client.framework.modules.post.module_refnames.each { | name |
       mod = client.framework.modules.post.create(name)
       if mod && mod.session_compatible?(client)
         mod.fullname.dup

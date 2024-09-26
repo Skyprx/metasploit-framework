@@ -1,5 +1,4 @@
 # -*- coding: binary -*-
-require 'rex/ui'
 
 begin
   require 'windows_console_color_support'
@@ -95,6 +94,7 @@ class Output::Stdio < Rex::Ui::Text::Output
     msg
   end
   alias_method :write, :print_raw
+  alias_method :<<, :write
 
   def supports_color?
     case config[:color]

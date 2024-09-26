@@ -22,14 +22,14 @@ class MetasploitModule < Msf::Auxiliary
         'Author'        => ['Wyatt Dahlenburg (@wdahlenb)'],
         'Platform'      => ['linux'],
         'SessionTypes'  => ['shell', 'meterpreter'],
-        'References'    => [['URL', 'https://help.github.com/en/articles/testing-your-ssh-connection']]
+        'References'    => [['URL', 'https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection']]
       )
     )
 
     register_options(
       [
         OptPath.new('KEY_FILE', [false, 'Filename of a private key.', nil]),
-        OptPath.new('KEY_DIR', [false, 'Directory of several keys. Filenames will be recursivley found matching id_* (Ex: /home/user/.ssh)', nil]),
+        OptPath.new('KEY_DIR', [false, 'Directory of several keys. Filenames will be recursively found matching id_* (Ex: /home/user/.ssh)', nil]),
         OptString.new('GITSERVER', [true, 'Parameter to specify alternate Git Server (GitHub, GitLab, etc)', 'github.com'])
       ]
     )

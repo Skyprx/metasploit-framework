@@ -168,7 +168,7 @@ public
   #  * 'private_type' [String] Password type.
   #  * 'realm_value' [String] Realm.
   #  * 'realm_key' [String] Realm key.
-  #  * 'host' [String] Host (Only avilable if there's a :last_attempted_at and :status)
+  #  * 'host' [String] Host (Only available if there's a :last_attempted_at and :status)
   #  * 'sname' [String] Service name (only available if there's a :last_attempted_at and :status)
   #  * 'status' [Status] Login status (only available if there's a :last_attempted_at and :status)
   # @see https://github.com/rapid7/metasploit-credential/blob/master/lib/metasploit/credential/creation.rb#L107 #create_credential Documentation.
@@ -757,6 +757,8 @@ public
   # @option xopts [String] :addr Host address.
   # @option xopts [String] :address Same as :addr.
   # @option xopts [String] :host Same as :address.
+  # @option xopts [Map<String, Object>]  :analyze_options  All returned modules will support these options
+  # * [Array<String>] :payloads Modules returned will be compatible with at least one payload
   # @raise [Msf::RPC::ServerException] You might get one of these errors:
   #  * 500 ActiveRecord::ConnectionNotEstablished. Try: rpc.call('console.create').
   #  * 500 Database not loaded. Try: rpc.call('console.create')
@@ -772,26 +774,38 @@ public
 def rpc_analyze_host(xopts)
   ::ApplicationRecord.connection_pool.with_connection {
     _opts, _wspace = init_db_opts_workspace(xopts)
-
-    ret = {}
-    ret[:host] = []
+    ret = {
+      host: {}
+    }
     opts = fix_options(xopts)
-    h = self.framework.db.get_host(opts)
-    return ret unless h
-    h_result = self.framework.analyze.host(h)
-    host_detail = {}
-    host_detail[:address] = h.address
-    # for now only modules can be returned, in future maybe process whole result map
-    unless h_result[:modules].empty?
-      host_detail[:modules] = []
-      h_result[:modules].each do |mod|
-        mod_detail = {}
-        mod_detail[:mtype]  = mod.type
-        mod_detail[:mname]  = mod.fullname
-        host_detail[:modules] << mod_detail
+    opts.deep_symbolize_keys!
+    host = self.framework.db.get_host(opts)
+    # consider expanding to support a list of hosts?
+    return ret unless host
+
+    # as a consumer options should be a filter object not a top level param
+    analyze_options = {}
+    analyze_options = opts[:analyze_options] if opts[:analyze_options]
+    analyze_result = self.framework.analyze.host(host, **analyze_options)
+    # this should just serialize the result as hosts details why did it end up limited?
+    module_suggestions = analyze_result[:results].sort_by { |result| result.mod.fullname }
+    host_detail = {
+      address: host.address,
+      modules: module_suggestions.map do |result|
+        mod = result.mod
+        {
+          mtype: mod.type,
+          mname: mod.fullname,
+          state: result.state,
+          description: result.description,
+          options: {
+            invalid: result.invalid,
+            missing: result.missing
+          }
+        }
       end
-    end
-    ret[:host] << host_detail
+    }
+    ret[:host] = host_detail
     ret
   }
 end
@@ -1062,7 +1076,7 @@ end
   # @option xopts [String] :proto Along with +:host+ and +:port+, a service to associate with this note.
   # @option xopts [Hash] A hash that contains the following information.
   #  * :unique [Boolean] Allow only a single Note per +:host+/+:type+ pair.
-  #  * :unique_data [Boolean] Like +:uniqe+, but also compare +:data+.
+  #  * :unique_data [Boolean] Like +:unique+, but also compare +:data+.
   #  * :insert [Boolean] Always insert a new Note even if one with identical values exists.
   # @raise [Msf::RPC::ServerException] You might get one of these errors:
   #  * 500 ActiveRecord::ConnectionNotEstablished. Try: rpc.call('console.create').
@@ -1859,7 +1873,7 @@ end
   # @option [String] :driver Driver name. For example: 'postgresql'. If this option is not set,
   #                  then the method returns the current one.
   # @return [Hash] A hash that contains:
-  #  * 'result' [String] Indiciating whether we've successfully set the driver or not.
+  #  * 'result' [String] Indicating whether we've successfully set the driver or not.
   #  * 'driver' [String] If the :driver option isn't set, then this returns the current one.
   # @example Here's how you would use this from the client:
   #  # Sets a driver

@@ -7,7 +7,6 @@
 # differ so greatly when it comes to require() paths for net modules, we will
 # settle for just getting shells on nodejs.
 
-require 'msf/base/sessions/command_shell'
 
 module MetasploitModule
 
@@ -35,7 +34,7 @@ module MetasploitModule
   #
   # Constructs the payload
   #
-  def generate
+  def generate(_opts = {})
     super + command_string
   end
 

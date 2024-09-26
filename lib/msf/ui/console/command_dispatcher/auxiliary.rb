@@ -12,31 +12,14 @@ module CommandDispatcher
 class Auxiliary
 
   include Msf::Ui::Console::ModuleCommandDispatcher
+  include Msf::Ui::Console::ModuleActionCommands
   include Msf::Ui::Console::ModuleOptionTabCompletion
-
-  @@auxiliary_action_opts = Rex::Parser::Arguments.new(
-    '-h' => [ false, 'Help banner.'                                                        ],
-    '-j' => [ false, 'Run in the context of a job.'                                        ],
-    '-o' => [ true,  'A comma separated list of options in VAR=VAL format.'                ],
-    '-q' => [ false, 'Run the module in quiet mode with no output'                         ]
-  )
-
-  @@auxiliary_opts = Rex::Parser::Arguments.new(@@auxiliary_action_opts.fmt.merge(
-    '-a' =>  [ true,  'The action to use.  If none is specified, ACTION is used.'],
-  ))
-
-  #
-  # Returns the hash of commands specific to auxiliary modules.
-  #
-  def action_commands
-      mod.actions.map { |action| [action.name.downcase, action.description] }.to_h
-  end
 
   #
   # Returns the hash of commands specific to auxiliary modules.
   #
   def commands
-    super.update({
+    super.merge({
       "run"      => "Launches the auxiliary module",
       "rcheck"   => "Reloads the module and checks if the target is vulnerable",
       "rerun"    => "Reloads and launches the auxiliary module",
@@ -44,38 +27,7 @@ class Auxiliary
       "recheck"  => "This is an alias for the rcheck command",
       "rexploit" => "This is an alias for the rerun command",
       "reload"   => "Reloads the auxiliary module"
-    }).merge( (mod ? mod.auxiliary_commands : {}) ).merge(action_commands)
-  end
-
-  #
-  # Allow modules to define their own commands
-  #
-  def method_missing(meth, *args)
-    if (mod and mod.respond_to?(meth.to_s, true) )
-
-      # Initialize user interaction
-      mod.init_ui(driver.input, driver.output)
-
-      return mod.send(meth.to_s, *args)
-    end
-
-    action = meth.to_s.delete_prefix('cmd_')
-    if mod && mod.kind_of?(Msf::Module::HasActions) && mod.actions.map(&:name).any? { |a| a.casecmp?(action) }
-       return do_action(action, *args)
-    end
-
-    return
-  end
-
-  #
-  #
-  # Execute the module with a set action
-  #
-  def do_action(meth, *args)
-    action = mod.actions.find { |action| action.name.casecmp?(meth) }
-    raise Msf::MissingActionError.new(meth) if action.nil?
-
-    cmd_run(*args, action: action.name)
+    }).merge( (mod ? mod.auxiliary_commands : {}) )
   end
 
   #
@@ -87,88 +39,56 @@ class Auxiliary
   end
 
   #
-  # Tab completion for the run command
-  #
-  def cmd_run_tabs(str, words)
-    flags = @@auxiliary_opts.fmt.keys
-    options = tab_complete_option(str, words)
-    flags + options
-  end
-
-  #
   # Executes an auxiliary module
   #
-  def cmd_run(*args, action: nil)
-    opts    = []
-    action  ||= mod.datastore['ACTION']
-    jobify  = false
-    quiet   = false
-
-    @@auxiliary_opts.parse(args) do |opt, idx, val|
-      case opt
-      when '-j'
-        jobify = true
-      when '-o'
-        opts.push(val)
-      when '-a'
-        action = val
-      when '-q'
-        quiet  = true
-      when '-h'
-        if action.nil?
-          cmd_run_help
-        else
-          cmd_action_help(action)
-        end
-        return false
-      else
-        if val[0] != '-' && val.match?('=')
-          opts.push(val)
-        else
-          cmd_run_help
-          return false
-        end
-      end
+  def cmd_run(*args, action: nil, opts: {})
+    if (args.include?('-r') || args.include?('--reload-libs')) && !opts[:previously_reloaded]
+      driver.run_single('reload_lib -a')
     end
+
+    return false unless (args = parse_run_opts(args, action: action))
+    jobify = args[:jobify]
 
     # Always run passive modules in the background
     if mod.is_a?(Msf::Module::HasActions) &&
-        (mod.passive || mod.passive_action?(action || mod.default_action))
+        (mod.passive || mod.passive_action?(args[:action] || mod.default_action))
       jobify = true
     end
 
-    rhosts = datastore['RHOSTS']
+    mod_with_opts = mod.replicant
+    mod_with_opts.datastore.import_options_from_hash(args[:datastore_options])
+    rhosts = mod_with_opts.datastore['RHOSTS']
+    rhosts_walker = Msf::RhostsWalker.new(rhosts, mod_with_opts.datastore)
+
+    begin
+      mod_with_opts.validate
+    rescue ::Msf::OptionValidateError => e
+      ::Msf::Ui::Formatter::OptionValidateError.print_error(mod_with_opts, e)
+      return false
+    end
+
     begin
       # Check if this is a scanner module or doesn't target remote hosts
       if rhosts.blank? || mod.class.included_modules.include?(Msf::Auxiliary::Scanner)
-        mod.run_simple(
-          'Action'         => action,
-          'OptionStr'      => opts.join(','),
+        mod_with_opts.run_simple(
+          'Action'         => args[:action],
           'LocalInput'     => driver.input,
           'LocalOutput'    => driver.output,
           'RunAsJob'       => jobify,
-          'Quiet'          => quiet
+          'Quiet'          => args[:quiet]
         )
       # For multi target attempts with non-scanner modules.
       else
-        rhosts_opt = Msf::OptAddressRange.new('RHOSTS')
-        if !rhosts_opt.valid?(rhosts)
-          print_error("Auxiliary failed: option RHOSTS failed to validate.")
-          return false
-        end
-
-        rhosts_range = Rex::Socket::RangeWalker.new(rhosts_opt.normalize(rhosts))
-        rhosts_range.each do |rhost|
-          nmod = mod.replicant
-          nmod.datastore['RHOST'] = rhost
-          print_status("Running module against #{rhost}")
-          nmod.run_simple(
-            'Action'         => action,
-            'OptionStr'      => opts.join(','),
+        rhosts_walker.each do |datastore|
+          mod_with_opts = mod.replicant
+          mod_with_opts.datastore.merge!(datastore)
+          print_status("Running module against #{datastore['RHOSTS']}")
+          mod_with_opts.run_simple(
+            'Action'         => args[:action],
             'LocalInput'     => driver.input,
             'LocalOutput'    => driver.output,
             'RunAsJob'       => false,
-            'Quiet'          => quiet
+            'Quiet'          => args[:quiet]
           )
         end
       end
@@ -181,6 +101,8 @@ class Auxiliary
       end
     rescue ::Interrupt
       print_error("Auxiliary interrupted by the console user")
+    rescue ::Msf::OptionValidateError => e
+      ::Msf::Ui::Formatter::OptionValidateError.print_error(running_mod, e)
     rescue ::Exception => e
       print_error("Auxiliary failed: #{e.class} #{e}")
       if(e.class.to_s != 'Msf::OptionValidateError')
@@ -194,8 +116,8 @@ class Auxiliary
       return false
     end
 
-    if (jobify && mod.job_id)
-      print_status("Auxiliary module running as background job #{mod.job_id}.")
+    if (jobify && mod_with_opts.job_id)
+      print_status("Auxiliary module running as background job #{mod_with_opts.job_id}.")
     else
       print_status("Auxiliary module execution completed")
     end
@@ -205,17 +127,7 @@ class Auxiliary
   alias cmd_exploit_tabs cmd_run_tabs
 
   def cmd_run_help
-    print_line "Usage: run [options]"
-    print_line
-    print_line "Launches an auxiliary module."
-    print @@auxiliary_opts.usage
-  end
-
-  def cmd_action_help(action)
-    print_line "Usage: " + action.downcase + " [options]"
-    print_line
-    print_line "Launches an auxiliary module."
-    print @@auxiliary_action_opts.usage
+    print_module_run_or_check_usage(command: :run, options: @@module_opts)
   end
 
   alias cmd_exploit_help cmd_run_help
@@ -224,8 +136,14 @@ class Auxiliary
   # Reloads an auxiliary module and executes it
   #
   def cmd_rerun(*args)
+    opts = {}
+    if args.include?('-r') || args.include?('--reload-libs')
+      driver.run_single('reload_lib -a')
+      opts[:previously_reloaded] = true
+    end
+
     if reload(true)
-      cmd_run(*args)
+      cmd_run(*args, opts: opts)
     end
   end
 
@@ -238,9 +156,15 @@ class Auxiliary
   # vulnerable.
   #
   def cmd_rcheck(*args)
+    opts = {}
+    if args.include?('-r') || args.include?('--reload-libs')
+      driver.run_single('reload_lib -a')
+      opts[:previously_reloaded] = true
+    end
+
     reload()
 
-    cmd_check(*args)
+    cmd_check(*args, opts: opts)
   end
 
   alias cmd_recheck cmd_rcheck

@@ -3,7 +3,6 @@ require 'rex/socket/ssl'
 module Msf
 module Ssl
   module CertProvider
-    autoload :Faker, 'faker'
 
     def self.rand_vars(opts = {})
       opts ||= {}
@@ -91,7 +90,7 @@ module Ssl
         cert.extensions << ef.create_extension("extendedKeyUsage", ekuse)
       end
 
-      cert.sign(key, OpenSSL::Digest::SHA256.new)
+      cert.sign(key, OpenSSL::Digest.new('SHA256'))
 
       [key, cert, nil]
     end

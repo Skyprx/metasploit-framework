@@ -22,7 +22,7 @@ class MetasploitModule < Msf::Auxiliary
         ],
       'References'     =>
         [
-          [ 'URL', 'https://www.nccgroup.trust/globalassets/our-research/us/whitepapers/PEST-CONTROL.pdf' ],
+          [ 'URL', 'https://www.nccgroup.com/globalassets/our-research/us/whitepapers/PEST-CONTROL.pdf' ],
           [ 'URL', 'http://samvartaka.github.io/exploitation/2016/06/03/dead-rats-exploiting-malware' ]
         ],
       'DisclosureDate' => '2012-10-08',
@@ -262,7 +262,7 @@ class MetasploitModule < Msf::Auxiliary
       brute_max = 4
 
       if missing_bytecount > brute_max
-        print_status("Using inferrence attack ...")
+        print_status("Using inference attack ...")
 
         # Offsets to monitor for changes
         target_offset_range = []
@@ -317,7 +317,7 @@ class MetasploitModule < Msf::Auxiliary
           end
         end
 
-        # Inferrence attack done, reconstruct final keystream segment
+        # Inference attack done, reconstruct final keystream segment
         inf_seg = ["\x00"] * (keystream.length + missing_bytecount)
         inferrence_results.each do |x, val|
           inf_seg[x] = val

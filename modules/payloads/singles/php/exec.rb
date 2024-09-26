@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/base/sessions/command_shell'
 
 
 module MetasploitModule
@@ -44,7 +43,7 @@ module MetasploitModule
   #
   # Constructs the payload
   #
-  def generate
+  def generate(_opts = {})
     return php_exec_cmd
   end
 end

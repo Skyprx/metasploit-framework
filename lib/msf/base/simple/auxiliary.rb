@@ -45,7 +45,7 @@ module Auxiliary
 
     # Clone the module to prevent changes to the original instance
     mod = omod.replicant
-    Msf::Simple::Framework.simplify_module( mod, false )
+    Msf::Simple::Framework.simplify_module(mod)
     yield(mod) if block_given?
 
     # Import options from the OptionStr or Option hash.
@@ -71,7 +71,8 @@ module Auxiliary
     run_uuid = Rex::Text.rand_text_alphanumeric(24)
     job_listener.waiting run_uuid
     ctx = [mod, run_uuid, job_listener]
-    if(mod.passive? or opts['RunAsJob'])
+    run_as_job = opts['RunAsJob'].nil? ? mod.passive? : opts['RunAsJob']
+    if run_as_job
       mod.job_id = mod.framework.jobs.start_bg_job(
         "Auxiliary: #{mod.refname}",
         ctx,
@@ -109,7 +110,7 @@ module Auxiliary
   # 	The local output through which data can be displayed.
   #
   def self.check_simple(mod, opts, job_listener: Msf::Simple::NoopJobListener.instance)
-    Msf::Simple::Framework.simplify_module(mod, false)
+    Msf::Simple::Framework.simplify_module(mod)
 
     mod._import_extra_options(opts)
     if opts['LocalInput']
@@ -118,7 +119,7 @@ module Auxiliary
 
     unless mod.has_check?
       # Bail out early if the module doesn't have check
-      raise ::NoMethodError.new(Msf::Exploit::CheckCode::Unsupported.message, 'check')
+      raise ::NotImplementedError.new(Msf::Exploit::CheckCode::Unsupported.message)
     end
 
     # Validate the option container state so that options will
@@ -205,6 +206,9 @@ protected
         raise $!
       end
       return
+    rescue ::Msf::OptionValidateError => e
+      mod.error = e
+      ::Msf::Ui::Formatter::OptionValidateError.print_error(mod, e)
     rescue ::Exception => e
       mod.error = e
       mod.print_error("Auxiliary failed: #{e.class} #{e}")
@@ -237,4 +241,3 @@ end
 
 end
 end
-

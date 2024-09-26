@@ -1,6 +1,5 @@
 require 'json'
 require 'metasploit/framework/data_service/remote/http/response_data_helper'
-require 'rex/ui/text/output/stdio'
 
 module Msf::WebServices::ServletHelper
   include ResponseDataHelper
@@ -55,9 +54,13 @@ module Msf::WebServices::ServletHelper
 
   def print_error_and_create_response(error: , message:, code:)
     print_error "Error handling request: #{error.message}.", error
+    create_error_response(error: error, message: message, code: code)
+  end
+
+  def create_error_response(error:, message:, code:)
     error_response = {
-        code: code,
-        message: "#{message} #{error.message}"
+      code: code,
+      message: "#{message} #{error.message}"
     }
     set_json_error_response(response: error_response, code: code)
   end
@@ -99,7 +102,7 @@ module Msf::WebServices::ServletHelper
     if query_hash.key?('id')
       raise ArgumentError, ("'id' is not a valid query parameter. Please use /api/v1/<resource>/{ID} instead.")
     end
-    params.symbolize_keys.except(:captures, :splat)
+    params.symbolize_keys.except(:captures, :splat).to_h.symbolize_keys
   end
 
   # Determines if this data set should be output as a single object instead of an array.

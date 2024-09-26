@@ -3,9 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/base/sessions/meterpreter_android'
-require 'msf/base/sessions/meterpreter_options'
-require 'rex/payloads/meterpreter/config'
 
 module MetasploitModule
 
@@ -40,8 +37,6 @@ module MetasploitModule
   end
 
   def generate_jar(opts={})
-    uri_req_len = 30 + luri.length + rand(256 - (30 + luri.length))
-    opts[:uri] = generate_uri_uuid_mode(:connect, uri_req_len)
     opts[:stageless] = true
     super(opts)
   end

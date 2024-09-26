@@ -31,8 +31,10 @@ class MetasploitModule < Msf::Auxiliary
       ]
     )
 
-    deregister_options('PASSWORD_SPRAY')
-    deregister_options('DB_ALL_CREDS', 'DB_ALL_USERS', 'HttpUsername', 'STOP_ON_SUCCESS', 'USERNAME', 'USERPASS_FILE', 'USER_AS_PASS', 'USER_FILE')
+    deregister_options(
+      'DB_ALL_CREDS', 'DB_ALL_USERS', 'DB_SKIP_EXISTING',
+      'HttpUsername', 'STOP_ON_SUCCESS', 'USERNAME', 'USERPASS_FILE', 'USER_AS_PASS', 'USER_FILE'
+    )
 
     register_autofilter_ports([ 80, 443, 8888 ])
   end
@@ -48,7 +50,7 @@ class MetasploitModule < Msf::Auxiliary
     destination = res.headers['Location'].split('?', 2)[0]
     return true if destination.end_with?(normalize_uri(target_uri.path, 'login'))
 
-    fail_with(Failure::UnexpectedReply, "The server responded with a redirect that did not match a known fingerprint")
+    fail_with(Failure::UnexpectedReply, 'The server responded with a redirect that did not match a known fingerprint')
   end
 
   def run_host(ip)
@@ -81,6 +83,7 @@ class MetasploitModule < Msf::Auxiliary
       pass_file: datastore['PASS_FILE'],
       password: datastore['PASSWORD']
     )
+    cred_collection = prepend_db_passwords(cred_collection)
 
     scanner = Metasploit::Framework::LoginScanner::Jupyter.new(
       configure_http_login_scanner(

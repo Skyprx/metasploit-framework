@@ -4,12 +4,9 @@ require 'metasploit/framework/aws/client'
 RSpec.describe Metasploit::Framework::Aws::Client do
 
   subject do
-    mod_klass = Class.new(Msf::Auxiliary) do
+    s = Class.new(Msf::Auxiliary) do
       include Metasploit::Framework::Aws::Client
-    end
-    features = instance_double(Msf::FeatureManager, enabled?: false)
-    mod_klass.framework = instance_double(Msf::Framework, features: features, datastore: {})
-    s = mod_klass.new
+    end.new
     s.datastore['Region'] = 'us-east-1'
     s.datastore['RHOST'] = '127.0.0.1'
     s
@@ -45,7 +42,7 @@ RSpec.describe Metasploit::Framework::Aws::Client do
 
   let(:service) { 'iam' }
 
-  let(:auth_header) { "AWS4-HMAC-SHA256 Credential=#{creds.fetch('AccessKeyId')}/#{now[0, 8]}/#{subject.datastore.fetch('Region')}/#{service}/aws4_request, SignedHeaders=#{headers_down_join}, Signature=#{signature}" }
+  let(:auth_header) { "AWS4-HMAC-SHA256 Credential=#{creds.fetch('AccessKeyId')}/#{now[0, 8]}/#{subject.datastore['Region']}/#{service}/aws4_request, SignedHeaders=#{headers_down_join}, Signature=#{signature}" }
 
   it 'should create a SHA 265 digest' do
     d = subject.hexdigest(value)
@@ -105,11 +102,11 @@ RSpec.describe Metasploit::Framework::Aws::Client do
     expect(h.fetch('Accept-Encoding')).to be_empty
     expect(h.fetch('User-Agent')).to eq(Metasploit::Framework::Aws::Client::USER_AGENT)
     expect(h.fetch('X-Amz-Date')).to eq(now)
-    expect(h.fetch('Host')).to eq(subject.datastore.fetch('RHOST'))
+    expect(h.fetch('Host')).to eq(subject.datastore['RHOST'])
     expect(h.fetch('X-Amz-Content-Sha256')).to eq(digest)
     expect(h.fetch('Accept')).to eq('*/*')
     expect(h.fetch('X-Amz-Security-Token')).to eq(creds.fetch('Token'))
-    expect(h.fetch('Authorization')).to eq("AWS4-HMAC-SHA256 Credential=AWS_ACCESS_KEY_ID/#{now[0, 8]}/#{subject.datastore.fetch('Region')}/#{service}/aws4_request, SignedHeaders=content-type;host;user-agent;x-amz-content-sha256;x-amz-date, Signature=275d7332d893de60eaf9f033e1f125f9f00e79c86b7b8902d620da778aff602b")
+    expect(h.fetch('Authorization')).to eq("AWS4-HMAC-SHA256 Credential=AWS_ACCESS_KEY_ID/#{now[0, 8]}/#{subject.datastore['Region']}/#{service}/aws4_request, SignedHeaders=content-type;host;user-agent;x-amz-content-sha256;x-amz-date, Signature=275d7332d893de60eaf9f033e1f125f9f00e79c86b7b8902d620da778aff602b")
   end
 
   it 'should not error out with weird input' do

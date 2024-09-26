@@ -23,7 +23,7 @@ class MetasploitModule < Msf::Auxiliary
           ['OSVDB', '30172'],
           ['BID', '20858'],
           ['CVE', '2006-5702'],
-          ['URL', 'http://secunia.com/advisories/22678/'],
+          ['URL', 'https://web.archive.org/web/20080211225557/http://secunia.com/advisories/22678/'],
         ],
       'DisclosureDate' => '2006-11-01',
       'Actions'        =>
@@ -56,7 +56,7 @@ class MetasploitModule < Msf::Auxiliary
     }, 25)
 
     if (res and res.message == "OK")
-      print_status("Get informations about database...")
+      print_status("Get information about database...")
 
       n = 0
       c = 0
@@ -107,7 +107,7 @@ class MetasploitModule < Msf::Auxiliary
       end
 
       if (c == 0)
-        print_status("Could not obtain informations about database.")
+        print_status("Could not obtain information about database.")
       end
 
     else

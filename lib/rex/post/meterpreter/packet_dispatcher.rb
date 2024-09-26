@@ -1,8 +1,9 @@
 # -*- coding: binary -*-
 
+require 'rex/post/meterpreter/command_mapper'
 require 'rex/post/meterpreter/packet_response_waiter'
-require 'rex/logging'
 require 'rex/exceptions'
+require 'pathname'
 
 module Rex
 module Post
@@ -14,8 +15,10 @@ module Meterpreter
 #
 ###
 class RequestError < ArgumentError
-  def initialize(method, einfo, ecode=nil)
-    @method = method
+  def initialize(command_id, einfo, ecode=nil)
+    command_name = Rex::Post::Meterpreter::CommandMapper.get_command_name(command_id)
+
+    @method = command_name || "##{command_id}"
     @result = einfo
     @code   = ecode || einfo
   end
@@ -42,7 +45,7 @@ end
 ###
 module PacketDispatcher
 
-  # Defualt time, in seconds, to wait for a response after sending a packet
+  # Default time, in seconds, to wait for a response after sending a packet
   PACKET_TIMEOUT = 600
 
   # Number of seconds to wait without getting any packets before we try to
@@ -90,7 +93,7 @@ module PacketDispatcher
 
   def on_passive_request(cli, req)
     begin
-      self.last_checkin = Time.now
+      self.last_checkin = ::Time.now
       resp = send_queue.shift
       cli.send_response(resp)
     rescue => e
@@ -128,8 +131,7 @@ module PacketDispatcher
       tlv_enc_key = opts[:tlv_enc_key]
     end
 
-    # Uncomment this line if you want to see outbound packets in the console.
-    #STDERR.puts("SEND: #{packet.inspect}\n")
+    log_packet(packet, :send)
 
     bytes = 0
     raw   = packet.to_r(session_guid, tlv_enc_key)
@@ -176,7 +178,7 @@ module PacketDispatcher
     if timeout.nil?
       return nil
     elsif response.nil?
-      raise TimeoutError.new("Send timed out")
+      raise Rex::TimeoutError.new("Send timed out")
     elsif (response.result != 0)
       einfo = lookup_error(response.result)
       e = RequestError.new(packet.method, einfo, response.result)
@@ -196,6 +198,22 @@ module PacketDispatcher
   # @param timeout [Integer,nil] number of seconds to wait, or nil to wait
   #   forever
   def send_packet_wait_response(packet, timeout)
+    if packet.type == PACKET_TYPE_REQUEST && commands.present?
+      # XXX: Remove this condition once the payloads gem has had another major version bump from 2.x to 3.x and
+      # rapid7/metasploit-payloads#451 has been landed to correct the `enumextcmd` behavior on Windows. Until then, skip
+      # proactive validation of Windows core commands. This is not the only instance of this workaround.
+      windows_core = base_platform == 'windows' && (packet.method - (packet.method % COMMAND_ID_RANGE)) == Rex::Post::Meterpreter::ClientCore.extension_id
+
+      unless windows_core || commands.include?(packet.method)
+        if (ext_name = Rex::Post::Meterpreter::ExtensionMapper.get_extension_name(packet.method))
+          unless ext.aliases.include?(ext_name)
+            raise RequestError.new(packet.method, "The command requires the #{ext_name} extension to be loaded")
+          end
+        end
+        raise RequestError.new(packet.method, "The command is not supported by this Meterpreter type (#{session_type})")
+      end
+    end
+
     # First, add the waiter association for the supplied packet
     waiter = add_response_waiter(packet)
 
@@ -240,7 +258,7 @@ module PacketDispatcher
   # @return [void]
   def keepalive
     if @ping_sent
-      if Time.now.to_i - last_checkin.to_i > PING_TIME*2
+      if ::Time.now.to_i - last_checkin.to_i > PING_TIME*2
         dlog("No response to ping, session #{self.sid} is dead", LEV_3)
         self.alive = false
       end
@@ -561,11 +579,10 @@ module PacketDispatcher
   def dispatch_inbound_packet(packet)
     handled = false
 
-    # Uncomment this line if you want to see inbound packets in the console
-    #STDERR.puts("RECV: #{packet.inspect}\n")
+    log_packet(packet, :recv)
 
     # Update our last reply time
-    self.last_checkin = Time.now
+    self.last_checkin = ::Time.now
 
     pivot_session = self.find_pivot_session(packet.session_guid)
     pivot_session.pivoted_session.last_checkin = self.last_checkin if pivot_session
@@ -616,11 +633,80 @@ module PacketDispatcher
     @inbound_handlers.delete(handler)
   end
 
+  def initialize_tlv_logging(opt)
+    self.tlv_logging_error_occured = false
+    self.tlv_log_file = nil
+    self.tlv_log_file_path = nil
+    self.tlv_log_output = :none
+
+    if opt.casecmp?('console') || opt.casecmp?('true')
+      self.tlv_log_output = :console
+    elsif opt.start_with?('file:')
+      self.tlv_log_output = :file
+      self.tlv_log_file_path = opt.split('file:').last
+    end
+  end
+
 protected
 
   attr_accessor :receiver_thread # :nodoc:
   attr_accessor :dispatcher_thread # :nodoc:
   attr_accessor :waiters # :nodoc:
+
+  attr_accessor :tlv_log_output # :nodoc:
+  attr_accessor :tlv_log_file # :nodoc:
+  attr_accessor :tlv_log_file_path # :nodoc:
+  attr_accessor :tlv_logging_error_occured # :nodoc:
+
+  def shutdown_tlv_logging
+    self.tlv_log_output = :none
+    self.tlv_log_file.close unless self.tlv_log_file.nil?
+    self.tlv_log_file = nil
+    self.tlv_log_file_path = nil
+  end
+
+  def log_packet(packet, packet_type)
+    # if we previously failed to log, return
+    return if self.tlv_logging_error_occured || self.tlv_log_output == :none
+
+    if self.tlv_log_output == :console
+      log_packet_to_console(packet, packet_type)
+    elsif self.tlv_log_output == :file
+      log_packet_to_file(packet, packet_type)
+    end
+  end
+
+  def log_packet_to_console(packet, packet_type)
+    if packet_type == :send
+      print "\n%redSEND%clr: #{packet.inspect}\n"
+    elsif packet_type == :recv
+      print "\n%bluRECV%clr: #{packet.inspect}\n"
+    end
+  end
+
+  def log_packet_to_file(packet, packet_type)
+    pathname = ::Pathname.new(self.tlv_log_file_path.split('file:').last)
+
+    begin
+      if self.tlv_log_file.nil? || self.tlv_log_file.path != pathname.to_s
+        self.tlv_log_file.close unless self.tlv_log_file.nil?
+
+        self.tlv_log_file = ::File.open(pathname, 'a+')
+      end
+
+      if packet_type == :recv
+        self.tlv_log_file.puts("\nRECV: #{packet.inspect}\n")
+      elsif packet_type == :send
+        self.tlv_log_file.puts("\nSEND: #{packet.inspect}\n")
+      end
+    rescue ::StandardError => e
+      self.tlv_logging_error_occured = true
+      print_error "Failed writing to TLV Log File: #{pathname} with error: #{e.message}. Turning off logging for this session: #{self.inspect}..."
+      elog(e)
+      shutdown_tlv_logging
+      return
+    end
+  end
 end
 
 module HttpPacketDispatcher
@@ -635,6 +721,9 @@ module HttpPacketDispatcher
       'Proc'             => Proc.new { |cli, req| on_passive_request(cli, req) },
       'VirtualDirectory' => true
     )
+
+    # Add a reference count to the handler
+    self.passive_service.ref
   end
 
   def shutdown_passive_dispatcher
@@ -643,9 +732,7 @@ module HttpPacketDispatcher
       resource_uri = "/" + self.conn_id.to_s.gsub(/(^\/|\/$)/, '') + "/"
       self.passive_service.remove_resource(resource_uri) if self.passive_service
 
-      if self.passive_service.resources.empty?
-        Rex::ServiceManager.stop_service(self.passive_service)
-      end
+      self.passive_service.deref
       self.passive_service = nil
     end
     super
@@ -659,7 +746,7 @@ module HttpPacketDispatcher
     resp['Content-Type'] = 'application/octet-stream'
     resp['Connection']   = 'close'
 
-    self.last_checkin = Time.now
+    self.last_checkin = ::Time.now
 
     if req.method == 'GET'
       rpkt = send_queue.shift
@@ -690,4 +777,3 @@ module HttpPacketDispatcher
 end
 
 end; end; end
-

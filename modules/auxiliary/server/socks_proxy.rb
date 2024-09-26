@@ -3,11 +3,9 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'rex/proto/proxy/socks4a'
-require 'rex/proto/proxy/socks5'
-
 class MetasploitModule < Msf::Auxiliary
   include Msf::Auxiliary::Report
+  include Msf::Exploit::Remote::SocketServer
 
   def initialize
     super(
@@ -17,19 +15,16 @@ class MetasploitModule < Msf::Auxiliary
       },
       'Author' => [ 'sf', 'Spencer McIntyre', 'surefire' ],
       'License' => MSF_LICENSE,
-      'Actions' =>
-        [
-          [ 'Proxy', 'Description' => 'Run a SOCKS proxy server' ]
-        ],
-      'PassiveActions' =>
-        [
-          'Proxy'
-        ],
+      'Actions' => [
+        [ 'Proxy', { 'Description' => 'Run a SOCKS proxy server' } ]
+      ],
+      'PassiveActions' => [
+        'Proxy'
+      ],
       'DefaultAction' => 'Proxy'
     )
 
     register_options([
-      OptString.new('SRVHOST', [true, 'The address to listen on', '0.0.0.0']),
       OptPort.new('SRVPORT', [true, 'The port to listen on', 1080]),
       OptEnum.new('VERSION', [ true, 'The SOCKS version to use', '5', %w[4a 5] ]),
       OptString.new('USERNAME', [false, 'Proxy username for SOCKS5 listener'], conditions: %w[VERSION == 5]),
@@ -56,8 +51,9 @@ class MetasploitModule < Msf::Auxiliary
 
   def run
     opts = {
-      'ServerHost' => datastore['SRVHOST'],
-      'ServerPort' => datastore['SRVPORT'],
+      'ServerHost' => bindhost,
+      'ServerPort' => bindport,
+      'Comm' => _determine_server_comm(bindhost),
       'Context' => { 'Msf' => framework, 'MsfExploit' => self }
     }
 

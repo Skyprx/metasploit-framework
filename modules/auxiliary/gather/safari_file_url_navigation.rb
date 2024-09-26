@@ -204,7 +204,7 @@ class MetasploitModule < Msf::Auxiliary
     start_service
 
     # Create our own HTTP server
-    # We will stay in this functino until we manually terminate execution
+    # We will stay in this function until we manually terminate execution
     start_http
   end
 
@@ -322,14 +322,12 @@ class MetasploitModule < Msf::Auxiliary
     super
 
     # Kill FTP
-    stop_service
+    cleanup_service
 
     # clear my resource, deregister ref, stop/close the HTTP socket
     begin
       @http_service.remove_resource(datastore['URIPATH'])
       @http_service.deref
-      @http_service.stop
-      @http_service.close
       @http_service = nil
     rescue
     end

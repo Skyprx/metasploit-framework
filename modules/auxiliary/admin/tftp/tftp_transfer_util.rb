@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'rex/proto/tftp'
 
 class MetasploitModule < Msf::Auxiliary
   include Rex::Proto::TFTP
@@ -51,7 +50,7 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def mode
-    datastore['MODE'] || "octect"
+    datastore['MODE'] || "octet"
   end
 
   def remote_file
@@ -161,7 +160,7 @@ class MetasploitModule < Msf::Auxiliary
     end
   end
 
-  # Run in case something untoward happend with the connection and the
+  # Run in case something untoward happened with the connection and the
   # client object didn't get stopped on its own. This can happen with
   # transfers that got interrupted or malformed (like sending a 0 byte
   # file).

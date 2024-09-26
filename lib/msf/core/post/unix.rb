@@ -11,6 +11,14 @@ module Msf::Post::Unix
   end
 
   #
+  # Gets the pid of the current session
+  # @return [String]
+  #
+  def get_session_pid
+    cmd_exec("echo $PPID").to_s
+  end
+
+  #
   # Returns an array of hashes each representing a user
   # Keys are name, uid, gid, info, dir and shell
   #
@@ -99,8 +107,8 @@ module Msf::Post::Unix
   #
   def whoami
     shellpid = get_session_pid()
-    statuspid = pid_uid(shellpid)
-    statuspid.each_line do |line|
+    status = read_file("/proc/#{shellpid}/status")
+    status.each_line do |line|
       split = line.split(":")
       if split[0] == "Uid"
         regex = /.*\s(.*)\s/

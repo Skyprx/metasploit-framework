@@ -3,12 +3,10 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/base/sessions/command_shell'
-require 'msf/base/sessions/command_shell_options'
 
 module MetasploitModule
 
-  CachedSize = 601
+  CachedSize = :dynamic
 
   include Msf::Payload::Stager
   include Msf::Payload::Python

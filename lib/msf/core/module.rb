@@ -83,6 +83,19 @@ module Msf
       # The path from which the module was loaded.
       #
       attr_accessor :file_path
+
+      # @return [String, nil] Reference name of the payload being adapted
+      attr_accessor :adapted_refname
+
+      # @return [String, nil] Reference name of the payloads adapter
+      attr_accessor :adapter_refname
+
+      # @return [String, nil] Reference name of the payload stage
+      attr_accessor :stage_refname
+
+      # @return [String, nil] Reference name of the payloads stager
+      attr_accessor :stager_refname
+
     end
 
     #
@@ -150,9 +163,15 @@ module Msf
     def replicant
       obj = self.clone
       self.instance_variables.each { |k|
-        v = instance_variable_get(k)
-        v = v.dup rescue v
-        obj.instance_variable_set(k, v)
+        old_value = instance_variable_get(k)
+        begin
+          new_value = old_value.is_a?(Rex::Ref) ? old_value.ref : old_value.dup
+        rescue => e
+          elog("#{self.class} replicant failed to dup #{k}", error: e)
+          new_value = old_value
+        end
+
+        obj.instance_variable_set(k, new_value)
       }
 
       obj.datastore    = self.datastore.copy
@@ -178,7 +197,7 @@ module Msf
       end
     end
 
-    # @param[Constant] One or more Ruby constants
+    # @param rb_modules [Constant] One or more Ruby constants
     # @return [void]
     def register_extensions(*rb_modules)
       datastore[REPLICANT_EXTENSION_DS_KEY] = [] unless datastore[REPLICANT_EXTENSION_DS_KEY].present?
@@ -199,6 +218,26 @@ module Msf
     #
     def file_path
       self.class.file_path
+    end
+
+    # @return [String, nil] Reference name of the payload being adapted
+    def adapted_refname
+      self.class.adapted_refname
+    end
+
+    # @return [String, nil] Reference name of the payloads adapter
+    def adapter_refname
+      self.class.adapter_refname
+    end
+
+    # @return [String, nil] Reference name of the payload stage
+    def stage_refname
+      self.class.stage_refname
+    end
+
+    # @return [String, nil] Reference name of the payloads stager
+    def stager_refname
+      self.class.stager_refname
     end
 
     #
@@ -294,6 +333,10 @@ module Msf
       false
     end
 
+    def default_options
+      self.module_info['DefaultOptions']
+    end
+
     def required_cred_options
       @required_cred_options ||= lambda {
         self.options.select { |name, opt|
@@ -343,12 +386,17 @@ module Msf
     def default_cred?
       return false unless post_auth?
 
-      cred_opts_with_default = required_cred_options.select { |name, opt|
-        case opt.type
-        when 'string'
-          return true unless opt.default.blank?
+      required_cred_options.all? do |name, opt|
+        if opt.type == 'string'
+          if !opt.default.blank?
+            true
+          else
+            false
+          end
+        else
+          true
         end
-      }
+      end
 
       false
     end
@@ -410,6 +458,8 @@ module Msf
     attr_writer   :platform, :references # :nodoc:
     attr_writer   :privileged # :nodoc:
     attr_writer   :license # :nodoc:
+
+
 
   end
 

@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
 class MetasploitModule < Msf::Post
   include Msf::Auxiliary::Cisco
   include Msf::Exploit::Deprecated
@@ -19,7 +18,12 @@ class MetasploitModule < Msf::Post
         'License' => MSF_LICENSE,
         'Author' => [ 'Carlos Perez <carlos_perez[at]darkoperator.com>'],
         'Platform' => [ 'cisco'],
-        'SessionTypes' => [ 'shell' ]
+        'SessionTypes' => [ 'shell' ],
+        'Notes' => {
+          'Stability' => [CRASH_SAFE],
+          'SideEffects' => [IOC_IN_LOGS],
+          'Reliability' => []
+        }
       )
     )
 
@@ -29,7 +33,6 @@ class MetasploitModule < Msf::Post
         OptPath.new('WORDLIST', [false, 'Wordlist of possible enable passwords to try.'])
       ]
     )
-
   end
 
   def run

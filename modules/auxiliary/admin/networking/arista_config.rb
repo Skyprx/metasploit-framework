@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
 class MetasploitModule < Msf::Auxiliary
   include Msf::Auxiliary::Arista
 
@@ -16,7 +15,12 @@ class MetasploitModule < Msf::Auxiliary
           This module imports an Arista device configuration.
         },
         'License' => MSF_LICENSE,
-        'Author' => [ 'h00die' ]
+        'Author' => [ 'h00die' ],
+        'Notes' => {
+          'Stability' => [],
+          'Reliability' => [],
+          'SideEffects' => []
+        }
       )
     )
 

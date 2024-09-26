@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'rex/proto/ntlm/message'
 
 class MetasploitModule < Msf::Auxiliary
   include Msf::Auxiliary::Report
@@ -213,7 +212,7 @@ class MetasploitModule < Msf::Auxiliary
     end
 
     if !["OWA_2013", "OWA_2016"].include?(action.name) && res.get_cookies.empty?
-        print_error("#{msg} Received invalid repsonse due to a missing cookie (possibly due to invalid version), aborting")
+        print_error("#{msg} Received invalid response due to a missing cookie (possibly due to invalid version), aborting")
         return :abort
     end
     if ["OWA_2013", "OWA_2016"].include?(action.name)

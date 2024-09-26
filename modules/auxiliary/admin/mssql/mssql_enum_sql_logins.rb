@@ -3,7 +3,6 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
 class MetasploitModule < Msf::Auxiliary
   include Msf::Exploit::Remote::MSSQL
 
@@ -22,7 +21,7 @@ class MetasploitModule < Msf::Auxiliary
       },
       'Author'      => ['nullbind <scott.sutherland[at]netspi.com>'],
       'License'     => MSF_LICENSE,
-      'References'  => [['URL','http://msdn.microsoft.com/en-us/library/ms174427.aspx']]
+      'References'  => [['URL','https://docs.microsoft.com/en-us/sql/t-sql/functions/suser-sname-transact-sql']]
     ))
 
     register_options(

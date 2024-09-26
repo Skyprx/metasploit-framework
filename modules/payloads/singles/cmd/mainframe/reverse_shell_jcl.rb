@@ -8,8 +8,6 @@
 #  on the system as JCL to JES2
 ##
 
-require 'msf/base/sessions/mainframe_shell'
-require 'msf/base/sessions/command_shell_options'
 
 module MetasploitModule
   CachedSize = 8993
@@ -62,7 +60,7 @@ module MetasploitModule
   ##
   # Construct Payload
   ##
-  def generate
+  def generate(_opts = {})
     super + command_string
   end
 
