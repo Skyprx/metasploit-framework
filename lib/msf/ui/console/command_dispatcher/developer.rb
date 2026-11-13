@@ -67,9 +67,7 @@ class Msf::Ui::Console::CommandDispatcher::Developer
   end
 
   # XXX: This will try to reload *any* .rb and break on modules
-  def reload_file(path, print_errors: true)
-    full_path = File.expand_path(path)
-
+  def reload_file(full_path, print_errors: true)
     unless File.exist?(full_path) && full_path.end_with?('.rb')
       print_error("#{full_path} must exist and be a .rb file") if print_errors
       return
@@ -94,11 +92,16 @@ class Msf::Ui::Console::CommandDispatcher::Developer
       files = []
     end
 
+    ignored_patterns = %w[
+      **/Gemfile
+      **/Gemfile.lock
+      **/*_spec.rb
+      **/spec_helper.rb
+    ]
     @modified_files ||= []
-    @modified_files |= files.map do |file|
-      next if file.end_with?('_spec.rb') || file.end_with?("spec_helper.rb")
-      File.join(Msf::Config.install_root, file)
-    end.compact
+    @modified_files |= files.reject do |file|
+      ignored_patterns.any? { |pattern| File.fnmatch(pattern, file) }
+    end
     @modified_files
   end
 
@@ -131,7 +134,6 @@ class Msf::Ui::Console::CommandDispatcher::Developer
 
       framework.history_manager.with_context(name: :irb) do
         begin
-          reline_autocomplete = Reline.autocompletion
           if active_module
             print_status("You are in #{active_module.fullname}\n")
             Rex::Ui::Text::IrbShell.new(active_module).run
@@ -141,8 +143,6 @@ class Msf::Ui::Console::CommandDispatcher::Developer
           end
         rescue
           print_error("Error during IRB: #{$!}\n\n#{$@.join("\n")}")
-        ensure
-          Reline.autocompletion = reline_autocomplete if defined? reline_autocomplete
         end
       end
 
@@ -151,8 +151,8 @@ class Msf::Ui::Console::CommandDispatcher::Developer
         driver.input.reset_tab_completion
       end
     else
-      # XXX: No vprint_status here either
-      if framework.datastore['VERBOSE'].to_s == 'true'
+      # XXX: No vprint_status in this context
+      if framework.datastore['VERBOSE']
         print_status("You are executing expressions in #{binding.receiver}")
       end
 
@@ -242,9 +242,8 @@ class Msf::Ui::Console::CommandDispatcher::Developer
       print_warning("LocalEditor or $VISUAL/$EDITOR should be set. Falling back on #{editor}.")
     end
 
-    # XXX: No vprint_status in this context?
-    # XXX: VERBOSE is a string instead of Bool??
-    print_status("Launching #{editor} #{path}") if framework.datastore['VERBOSE'].to_s == 'true'
+    # XXX: No vprint_status in this context
+    print_status("Launching #{editor} #{path}") if framework.datastore['VERBOSE']
 
     unless system(*editor.split, path)
       print_error("Could not execute #{editor} #{path}")
@@ -272,6 +271,7 @@ class Msf::Ui::Console::CommandDispatcher::Developer
   #
   def cmd_reload_lib(*args)
     files = []
+    use_modified = false
     options = OptionParser.new do |opts|
       opts.banner = 'Usage: reload_lib lib/to/reload.rb [...]'
       opts.separator ''
@@ -284,16 +284,21 @@ class Msf::Ui::Console::CommandDispatcher::Developer
 
       opts.on '-a', '--all', 'Reload all* changed files in your current Git working tree.
                                      *Excludes modules and non-Ruby files.' do
+        use_modified = true
         files.concat(modified_file_paths)
       end
     end
 
     # The remaining unparsed arguments are files
-    files.concat(options.order(args))
+    files.concat(options.permute(args))
     files.uniq!
 
-    return print(options.help) if files.empty?
+    if files.empty?
+      return print_status('Nothing to reload') if use_modified
+      return print(options.help)
+    end
 
+    print_status("Reloading #{files.length} library #{'file'.pluralize(files.length)}...")
     files.each do |file|
       reload_file(file)
     rescue ScriptError, StandardError => e
@@ -333,9 +338,8 @@ class Msf::Ui::Console::CommandDispatcher::Developer
       print_warning("LocalPager or $PAGER/$MANPAGER should be set. Falling back on #{pager}.")
     end
 
-    # XXX: No vprint_status in this context?
-    # XXX: VERBOSE is a string instead of Bool??
-    print_status("Launching #{pager} #{path}") if framework.datastore['VERBOSE'].to_s == 'true'
+    # XXX: No vprint_status in this context
+    print_status("Launching #{pager} #{path}") if framework.datastore['VERBOSE']
 
     unless system(*pager.split, path)
       print_error("Could not execute #{pager} #{path}")
@@ -515,24 +519,36 @@ class Msf::Ui::Console::CommandDispatcher::Developer
     print_line
   end
 
-  private
+  protected
+
+  def source_directories
+    [Msf::Config.install_root]
+  end
 
   def modified_files
-    # Temporary work-around until Open3 gets fixed on Windows 11:
-    # https://github.com/ruby/open3/issues/9
-    return [] if Rex::Compat.is_cygwin || Rex::Compat.is_windows
-
     # Using an array avoids shelling out, so we avoid escaping/quoting
-    changed_files = %w[git diff --name-only]
-    begin
-      output, status = Open3.capture2e(*changed_files, chdir: Msf::Config.install_root)
-      is_success = status.success?
-      output = output.split("\n")
-    rescue => e
-      elog(e)
-      output = []
-      is_success = false
+    # --diff-filter=d excludes deleted files that would fail realpath resolution
+    changed_files = %w[git diff --name-only --diff-filter=d]
+
+    is_success = true
+    files = []
+    source_directories.each do |directory|
+      begin
+        output, status = Open3.capture2e(*changed_files, chdir: directory)
+        is_success = status.success?
+        break unless is_success
+
+        files += output.split("\n").map do |path|
+          realpath = Pathname.new(directory).join(path).realpath
+          raise "invalid path" unless realpath.to_s.start_with?(directory)
+          realpath.to_s
+        end
+      rescue => e
+        elog(e)
+        is_success = false
+        break
+      end
     end
-    return output, is_success
+    [files, is_success]
   end
 end

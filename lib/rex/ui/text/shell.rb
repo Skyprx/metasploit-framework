@@ -66,10 +66,7 @@ module Shell
   def init_tab_complete
     if (self.input and self.input.supports_readline)
       # Unless cont_flag because there's no tab complete for continuation lines
-      tab_complete_lambda = proc do |str, preposing = nil, postposing = nil|
-        next tab_complete(str, opts: { preposing: preposing, postposing: postposing }).map { |result| result[preposing.to_s.length..] } unless cont_flag
-      end
-      self.input = Input::Readline.new(tab_complete_lambda)
+      self.input = Input::Readline.new(lambda { |str| tab_complete(str) unless cont_flag })
       self.input.output = self.output
     end
   end
@@ -117,20 +114,17 @@ module Shell
   #
   # Performs tab completion on the supplied string.
   #
-  def tab_complete(str, opts: {})
-    tab_complete_proc(str, opts: opts) if tab_complete_proc
+  def tab_complete(str)
+    return tab_complete_proc(str) if (tab_complete_proc)
   end
 
   #
   # Run the command processing loop.
   #
   def run(&block)
-    begin
-      require 'pry'
-      # pry history will not be loaded by default when pry is used as a breakpoint like `binding.pry`
+    # Only suppress Pry history if Pry is already loaded
+    if defined?(Pry)
       Pry.config.history_load = false
-    rescue LoadError
-      # Pry is a development dependency, if not available suppressing history_load can be safely ignored.
     end
 
     with_history_manager_context do
@@ -307,13 +301,13 @@ module Shell
 
     begin
       history_manager.with_context(history_file: histfile, name: name) do
-        self.hist_last_saved = ::Reline::HISTORY.length
+        self.hist_last_saved = Readline::HISTORY.length
 
         yield
       end
     ensure
       history_manager.flush
-      self.hist_last_saved = ::Reline::HISTORY.length
+      self.hist_last_saved = Readline::HISTORY.length
     end
   end
 
@@ -367,7 +361,7 @@ module Shell
   def parse_line(line)
     log_input(line)
 
-    line.gsub!(/(\r|\n)/, '')
+    line = line.gsub(/(\r|\n)/, '')
 
     begin
       return args = Rex::Parser::Arguments.from_s(line)
@@ -421,7 +415,7 @@ module Shell
     session = framework.sessions.values.find { |session| session.interacting }
     default = 'unknown'
 
-    formatted = ''
+    formatted = +''
     skip_next = false
     for prefix, spec in str.split('').each_cons(2) do
       if skip_next
@@ -513,6 +507,7 @@ module Shell
   attr_reader   :cont_flag # :nodoc:
   attr_accessor :name
 private
+
   def try_exec(command)
     begin
       %x{ #{ command } }

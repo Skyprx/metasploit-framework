@@ -22,23 +22,31 @@ class MetasploitModule < Msf::Auxiliary
     super(
       update_info(
         info,
-        'Name'         => 'Redis Login Utility',
-        'Description'  => 'This module attempts to authenticate to an Redis service.',
-        'Author'       => [ 'Nixawk' ],
-        'References'   => [
+        'Name' => 'Redis Login Utility',
+        'Description' => 'This module attempts to authenticate to an Redis service.',
+        'Author' => [ 'Nixawk' ],
+        'References' => [
           ['URL', 'https://redis.io/topics/protocol']
         ],
-        'License'      => MSF_LICENSE))
+        'License' => MSF_LICENSE,
+        'Notes' => {
+          'Reliability' => UNKNOWN_RELIABILITY,
+          'Stability' => UNKNOWN_STABILITY,
+          'SideEffects' => UNKNOWN_SIDE_EFFECTS
+        }
+      )
+    )
 
     register_options(
       [
         OptPath.new('PASS_FILE',
-          [
-            false,
-            'The file that contains a list of of probable passwords.',
-            File.join(Msf::Config.install_root, 'data', 'wordlists', 'unix_passwords.txt')
-          ])
-      ])
+                    [
+                      false,
+                      'The file that contains a list of of probable passwords.',
+                      File.join(Msf::Config.install_root, 'data', 'wordlists', 'unix_passwords.txt')
+                    ])
+      ]
+    )
 
     # redis does not have an username, there's only password
     deregister_options(
@@ -60,7 +68,7 @@ class MetasploitModule < Msf::Auxiliary
 
   def run_host(ip)
     unless requires_password?(ip)
-      print_good "#{peer} - No password is required."
+      print_good "No password is required."
       report_vuln(
         host: ip,
         port: rport,
@@ -105,16 +113,16 @@ class MetasploitModule < Msf::Auxiliary
         create_credential_login(credential_data)
 
         if datastore['VERBOSE']
-          vprint_good "#{peer} - Login Successful: #{result.credential} (#{result.status}: #{result.proof.strip})"
+          vprint_good "Login Successful: #{result.credential} (#{result.status}: #{result.proof.strip})"
         else
-          print_good "#{peer} - Login Successful: #{result.credential}"
+          print_good "Login Successful: #{result.credential}"
         end
       when Metasploit::Model::Login::Status::NO_AUTH_REQUIRED
-        vprint_error "#{peer} - LOGIN FAILED: #{result.credential} (#{result.status}: #{result.proof.strip})"
+        vprint_error "LOGIN FAILED: #{result.credential} (#{result.status}: #{result.proof.strip})"
         break
       else
         invalidate_login(credential_data)
-        vprint_error "#{peer} - LOGIN FAILED: #{result.credential} (#{result.status}: #{result.proof.strip})"
+        vprint_error "LOGIN FAILED: #{result.credential} (#{result.status}: #{result.proof.strip})"
       end
     end
   end

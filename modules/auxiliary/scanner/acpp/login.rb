@@ -14,26 +14,30 @@ class MetasploitModule < Msf::Auxiliary
 
   def initialize
     super(
-      'Name'        => 'Apple Airport ACPP Authentication Scanner',
-      'Description' => %q(
+      'Name' => 'Apple Airport ACPP Authentication Scanner',
+      'Description' => %q{
         This module attempts to authenticate to an Apple Airport using its
         proprietary and largely undocumented protocol known only as ACPP.
-      ),
-      'Author'      =>
-        [
-          'Jon Hart <jon_hart[at]rapid7.com>'
-        ],
-      'References'     =>
-        [
-          %w(CVE 2003-0270) # Fixed XOR key used to encrypt password
-        ],
-      'License'     => MSF_LICENSE
+      },
+      'Author' => [
+        'Jon Hart <jon_hart[at]rapid7.com>'
+      ],
+      'References' => [
+        %w[CVE 2003-0270] # Fixed XOR key used to encrypt password
+      ],
+      'License' => MSF_LICENSE,
+      'Notes' => {
+        'Stability' => [CRASH_SAFE],
+        'SideEffects' => [IOC_IN_LOGS],
+        'Reliability' => []
+      }
     )
 
     register_options(
       [
         Opt::RPORT(Rex::Proto::ACPP::DEFAULT_PORT)
-      ])
+      ]
+    )
 
     deregister_options(
       # there is no username, so remove all of these options
@@ -50,7 +54,7 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def run_host(ip)
-    vprint_status("#{ip}:#{rport} - Starting ACPP login sweep")
+    vprint_status('Starting ACPP login sweep')
 
     cred_collection = Metasploit::Framework::PrivateCredentialCollection.new(
       blank_passwords: datastore['BLANK_PASSWORDS'],
@@ -92,7 +96,7 @@ class MetasploitModule < Msf::Auxiliary
         credential_core = create_credential(credential_data)
         credential_data[:core] = credential_core
         create_credential_login(credential_data)
-        print_good("#{ip}:#{rport} - ACPP Login Successful: #{password}")
+        print_good("ACPP Login Successful: #{password}")
         report_vuln(
           host: ip,
           port: rport,
@@ -103,7 +107,7 @@ class MetasploitModule < Msf::Auxiliary
         )
       else
         invalidate_login(credential_data)
-        vprint_error("#{ip}:#{rport} - ACPP LOGIN FAILED: #{password} (#{result.status}: #{result.proof})")
+        vprint_error("ACPP LOGIN FAILED: #{password} (#{result.status}: #{result.proof})")
       end
     end
   end

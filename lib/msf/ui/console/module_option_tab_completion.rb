@@ -1,3 +1,5 @@
+require 'msf/ui/console/module_option_validation'
+
 module Msf
   module Ui
     module Console
@@ -7,6 +9,8 @@ module Msf
       #
       ###
       module ModuleOptionTabCompletion
+        include Msf::Ui::Console::ModuleOptionValidation
+
         #
         # Tab completion for datastore names
         #
@@ -16,13 +20,7 @@ module Msf
         #   line. `_words` is always at least 1 when tab completion has reached this
         #   stage since the command itself has been completed.
         def tab_complete_datastore_names(datastore, _str, _words)
-          keys = (
-            Msf::DataStoreWithFallbacks::GLOBAL_KEYS +
-              datastore.keys
-          )
-          keys.concat(datastore.options.values.flat_map(&:fallbacks)) if datastore.is_a?(Msf::DataStoreWithFallbacks)
-          keys.uniq! { |key| key.downcase }
-          keys
+          datastore_option_names(datastore)
         end
 
         #
@@ -53,60 +51,26 @@ module Msf
             option_name = str.chop
             option_value = ''
 
-            ::Reline.completion_append_character = ' '
+            ::Readline.completion_append_character = ' '
             return tab_complete_option_values(mod, option_value, words, opt: option_name).map { |value| "#{str}#{value}" }
           elsif str.include?('=')
             str_split = str.split('=')
             option_name = str_split[0].strip
             option_value = str_split[1].strip
 
-            ::Reline.completion_append_character = ' '
+            ::Readline.completion_append_character = ' '
             return tab_complete_option_values(mod, option_value, words, opt: option_name).map { |value| "#{option_name}=#{value}" }
           end
 
-          ::Reline.completion_append_character = ''
+          ::Readline.completion_append_character = ''
           tab_complete_option_names(mod, str, words).map { |name| "#{name}=" }
         end
 
         #
         # Provide tab completion for name values
         #
-        def tab_complete_option_names(mod, str, words)
-          res = tab_complete_module_datastore_names(mod, str, words) || [ ]
-
-          if !mod
-            return res
-          end
-
-          mod.options.sorted.each do |e|
-            name, _opt = e
-            res << name
-          end
-          # Exploits provide these three default options
-          if mod.exploit?
-            res << 'PAYLOAD'
-            res << 'NOP'
-            res << 'TARGET'
-            res << 'ENCODER'
-          elsif mod.evasion?
-            res << 'PAYLOAD'
-            res << 'TARGET'
-            res << 'ENCODER'
-          elsif mod.payload?
-            res << 'ENCODER'
-          end
-          if mod.is_a?(Msf::Module::HasActions)
-            res << 'ACTION'
-          end
-          if ((mod.exploit? || mod.evasion?) && mod.datastore['PAYLOAD'])
-            p = framework.payloads.create(mod.datastore['PAYLOAD'])
-            if p
-              p.options.sorted.each do |e|
-                name, _opt = e
-                res << name
-              end
-            end
-          end
+        def tab_complete_option_names(mod, str, words, include_aliases: false)
+          res = valid_datastore_option_names(mod, include_aliases: include_aliases, active_only: true)
           unless str.blank?
             res = res.select { |term| term.upcase.start_with?(str.upcase) }
             res = res.map do |term|
@@ -119,7 +83,8 @@ module Msf
               end
             end
           end
-          return res
+
+          return res.sort
         end
 
         #
@@ -246,9 +211,9 @@ module Msf
           return res
         end
 
-        # XXX: We repurpose OptAddressLocal#interfaces, so we can't put this in Rex
+        # XXX: We repurpose OptAddressRoutable#interfaces, so we can't put this in Rex
         def tab_complete_source_interface(o)
-          return [] unless o.is_a?(Msf::OptAddressLocal)
+          return [] unless o.is_a?(Msf::OptAddressRoutable)
 
           o.interfaces
         end

@@ -67,6 +67,13 @@ class MetasploitModule < Msf::Post
       ret
     end
 
+    it 'should create intermediary directories' do
+      nested_path = [datastore['BaseDirectoryName'], 'parent', 'child'].join(fs_sep)
+      mkdir(nested_path)
+
+      directory?(nested_path)
+    end
+
     it 'should list the directory we just made' do
       dents = dir(datastore['BaseDirectoryName'])
       dents.include?('file') && dents.include?('directory')
@@ -77,13 +84,11 @@ class MetasploitModule < Msf::Post
       !directory?(datastore['BaseDirectoryName'])
     end
 
-    unless (session.platform == 'windows') || (session.platform != 'windows' && command_exists?('ln'))
-      print_warning('skipping link related checks because the target is incompatible')
-    else
+    if (session.platform == 'windows') || (session.platform != 'windows' && command_exists?('ln'))
       it 'should delete a symbolic link target' do
         # TODO: Fix this functionality
         if session.platform.eql?('windows') && session.type.eql?('shell')
-          vprint_status("test skipped for Windows CMD - functionality not correct")
+          vprint_status('test skipped for Windows CMD - functionality not correct')
           next true
         end
         mkdir(datastore['BaseDirectoryName'])
@@ -116,6 +121,8 @@ class MetasploitModule < Msf::Post
         rm_rf("#{datastore['BaseDirectoryName']}.1")
         ret
       end
+    else
+      print_warning('skipping link related checks because the target is incompatible')
     end
   end
 
@@ -179,7 +186,7 @@ class MetasploitModule < Msf::Post
       # Make sure we don't have leftovers from a previous run
       moved_file = datastore['BaseFileName'] + '-moved'
       begin
-        rm _f(datastore['BaseFileName'])
+        rm_f(datastore['BaseFileName'])
       rescue StandardError
         nil
       end
@@ -193,8 +200,8 @@ class MetasploitModule < Msf::Post
       write_file(datastore['BaseFileName'], '')
 
       rename_file(datastore['BaseFileName'], moved_file)
-      res &&= exist?(moved_file)
-      res &&= !exist?(datastore['BaseFileName'])
+      ret = exist?(moved_file)
+      ret &&= !exist?(datastore['BaseFileName'])
 
       # clean up
       begin
@@ -207,6 +214,8 @@ class MetasploitModule < Msf::Post
       rescue StandardError
         nil
       end
+
+      ret
     end
   end
 
@@ -214,7 +223,7 @@ class MetasploitModule < Msf::Post
     # binary_data = ::File.read("/bin/ls")
     # binary_data = ::File.read('/bin/echo')
     # binary_data = "\xff\x00\xff\xfe\xff\`$(echo blha)\`"
-    binary_data = ((0..255).to_a * 500).shuffle.pack("c*")
+    binary_data = ((0..255).to_a * 500).shuffle.pack('c*')
     it 'should write binary data' do
       vprint_status "Writing #{binary_data.length} bytes"
       t = Time.now
@@ -289,15 +298,33 @@ class MetasploitModule < Msf::Post
     end
   end
 
+  def test_writable
+    if session.platform == 'windows'
+      it 'should detect a writable file' do
+        write_file(datastore['BaseFileName'], 'test')
+        ret = writable?(datastore['BaseFileName'])
+        rm_f(datastore['BaseFileName'])
+        ret
+      end
+
+      it 'should detect a writable directory' do
+        mkdir(datastore['BaseDirectoryName'])
+        ret = writable?(datastore['BaseDirectoryName'])
+        rm_rf(datastore['BaseDirectoryName'])
+        ret
+      end
+
+    end
+  end
+
   def make_symlink(target, symlink)
     if session.platform == 'windows'
-      cmd_exec("cmd.exe", "/c mklink #{directory?(target) ? '/D ' : ''}#{symlink} #{target}")
+      cmd_exec('cmd.exe', "/c mklink #{directory?(target) ? '/D ' : ''}#{symlink} #{target}")
     else
       cmd_exec("ln -s $(pwd)/#{target} $(pwd)/#{symlink}")
     end
   end
 
-  def register_dir_for_cleanup(path)
-  end
+  def register_dir_for_cleanup(path); end
 
 end

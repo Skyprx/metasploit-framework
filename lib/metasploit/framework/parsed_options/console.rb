@@ -40,6 +40,10 @@ class Metasploit::Framework::ParsedOptions::Console < Metasploit::Framework::Par
           options.console.confirm_exit = true
         end
 
+        option_parser.on('--module-count', 'Print module counts and exit') do
+          options.subcommand = :module_count
+        end
+
         option_parser.on('-H', '--history-file FILE', 'Save command history to the specified file') do |file|
           options.console.histfile = file
         end
@@ -54,7 +58,6 @@ class Metasploit::Framework::ParsedOptions::Console < Metasploit::Framework::Par
 
         option_parser.on('-L', '--real-readline', 'Use the system Readline library instead of RbReadline') do
           message = "The RealReadline option has been marked as deprecated, and is currently a noop.\n"
-          message << "Metasploit Framework now uses Reline exclusively as the input handling library.\n"
           message << "If you require this functionality, please use the following link to tell us:\n"
           message << '  https://github.com/rapid7/metasploit-framework/issues/19399'
           warn message
@@ -81,11 +84,51 @@ class Metasploit::Framework::ParsedOptions::Console < Metasploit::Framework::Par
             '--execute-command COMMAND',
             'Execute the specified console commands (use ; for multiples)'
         ) do |commands|
-          options.console.commands += commands.split(/\s*;\s*/)
+          options.console.commands += split_commands(commands)
         end
       }
     end
 
     @option_parser
+  end
+
+  # Splits a command string on semicolons, but respects single and double
+  # quoted substrings so that values like
+  #   set POSTDATA "target_host=;inject&btn=Go"
+  # are kept intact as a single command.
+  #
+  # @param str [String] the raw command string from -x
+  # @return [Array<String>] individual commands
+  def split_commands(str)
+    commands = []
+    current = +''
+    quote_char = nil
+    escape = false
+
+    str.each_char do |char|
+      if escape
+        current << char
+        escape = false
+      elsif char == '\\'
+        current << char
+        escape = true
+      elsif quote_char
+        current << char
+        quote_char = nil if char == quote_char
+      elsif char == '"' || char == "'"
+        quote_char = char
+        current << char
+      elsif char == ';'
+        cmd = current.strip
+        commands << cmd unless cmd.empty?
+        current = +''
+      else
+        current << char
+      end
+    end
+
+    cmd = current.strip
+    commands << cmd unless cmd.empty?
+    commands
   end
 end

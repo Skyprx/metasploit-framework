@@ -69,9 +69,14 @@ NAVIGATION_CONFIG = [
     nav_order: 3
   },
   {
+    title: 'GitHub Stats',
+    nav_order: 4,
+    href: 'https://docs.metasploit.com/stats/'
+  },
+  {
     title: 'Pentesting',
     folder: 'pentesting',
-    nav_order: 4,
+    nav_order: 5,
     children: [
       {
         path: 'Metasploit-Guide-Setting-Module-Options.md',
@@ -230,7 +235,7 @@ NAVIGATION_CONFIG = [
   {
     title: 'Using Metasploit',
     folder: 'using-metasploit',
-    nav_order: 5,
+    nav_order: 6,
     children: [
       {
         title: 'Getting Started',
@@ -396,6 +401,10 @@ NAVIGATION_CONFIG = [
                 title: without_prefix('Meterpreter ')
               },
               {
+                path: 'Meterpreter-Malleable-C2-Profiles.md',
+                title: without_prefix('Meterpreter ')
+              },
+              {
                 path: 'How-to-get-started-with-writing-a-Meterpreter-script.md'
               },
               {
@@ -403,7 +412,7 @@ NAVIGATION_CONFIG = [
               },
               {
                 path: 'Python-Extension.md'
-              },
+              }
             ]
           },
           {
@@ -448,6 +457,9 @@ NAVIGATION_CONFIG = [
           {
             path: 'How-to-use-Metasploit-with-ngrok.md'
           },
+          {
+            path: 'How-to-use-Metasploit-MCP-Server.md'
+          },
         ]
       },
     ]
@@ -455,7 +467,7 @@ NAVIGATION_CONFIG = [
   {
     title: 'Development',
     folder: 'development',
-    nav_order: 6,
+    nav_order: 7,
     children: [
       {
         title: 'Get Started ',
@@ -596,6 +608,10 @@ NAVIGATION_CONFIG = [
                     title: 'RC4 Support'
                   },
                 ]
+              },
+              {
+                path: 'Post-Mixins.md',
+                title: 'PostMixins'
               },
               {
                 path: 'How-to-log-in-Metasploit.md',
@@ -857,6 +873,9 @@ NAVIGATION_CONFIG = [
             path: 'Loading-Test-Modules.md'
           },
           {
+            path: 'Payload-Testing.md'
+          },
+          {
             path: 'Measuring-Metasploit-Performance.md'
           }
         ]
@@ -902,6 +921,10 @@ NAVIGATION_CONFIG = [
           },
           {
             path: 'GSoC-2023-Project-Ideas.md',
+            title: without_prefix('GSoC')
+          },
+          {
+            path: 'GSoC-2026-Project-Ideas.md',
             title: without_prefix('GSoC')
           },
         ]
@@ -971,6 +994,6 @@ NAVIGATION_CONFIG = [
   },
   {
     path: 'Contact.md',
-    nav_order: 7
+    nav_order: 8
   },
 ].freeze

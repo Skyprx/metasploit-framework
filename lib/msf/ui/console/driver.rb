@@ -17,7 +17,7 @@ class Driver < Msf::Ui::Driver
   ConfigCore  = "framework/core"
   ConfigGroup = "framework/ui/console"
 
-  DefaultPrompt     = "%undmsf#{Metasploit::Framework::Version::MAJOR}%clr"
+  DefaultPrompt     = "%undmsf%clr"
   DefaultPromptChar = "%clr>"
 
   #
@@ -62,12 +62,28 @@ class Driver < Msf::Ui::Driver
   # @option opts [Boolean] 'SkipDatabaseInit' (false) Whether to skip
   #   connecting to the database and running migrations
   def initialize(prompt = DefaultPrompt, prompt_char = DefaultPromptChar, opts = {})
+    setup_readline
+
     histfile = opts['HistFile'] || Msf::Config.history_file
 
     begin
       FeatureManager.instance.load_config
     rescue StandardError => e
       elog(e)
+    end
+
+    # Check if files have been modified and force immediate loading if so.
+    # Can be skipped via feature flag for faster dev boots (use reload_all to refresh).
+    has_modified_metasploit_files = false
+    unless Msf::FeatureManager.instance.enabled?(Msf::FeatureManager::SKIP_CHECKSUM_VALIDATION)
+      has_modified_metasploit_files = !Msf::Modules::Metadata::Store.valid_checksum?
+
+      if has_modified_metasploit_files
+        current_checksum = Msf::Modules::Metadata::Store.get_current_checksum
+        Msf::Modules::Metadata::Store.update_cache_checksum(current_checksum)
+        # Force immediate module loading when files have changed
+        opts['DeferModuleLoads'] = false
+      end
     end
 
     if opts['DeferModuleLoads'].nil?
@@ -161,7 +177,8 @@ class Driver < Msf::Ui::Driver
       self.framework.init_module_paths(module_paths: opts['ModulePath'], defer_module_loads: opts['DeferModuleLoads'])
     end
 
-    unless opts['DeferModuleLoads']
+    # Refresh module cache if modules are modified, or we're not deferring loads
+    if has_modified_metasploit_files || !opts['DeferModuleLoads']
       framework.threads.spawn("ModuleCacheRebuild", true) do
         framework.modules.refresh_cache_from_module_files
       end
@@ -311,11 +328,11 @@ class Driver < Msf::Ui::Driver
   # Saves the recent history to the specified file
   #
   def save_recent_history(path)
-    num = ::Reline::HISTORY.length - hist_last_saved - 1
+    num = Readline::HISTORY.length - hist_last_saved - 1
 
     tmprc = ""
     num.times { |x|
-      tmprc << ::Reline::HISTORY[hist_last_saved + x] + "\n"
+      tmprc << Readline::HISTORY[hist_last_saved + x] + "\n"
     }
 
     if tmprc.length > 0
@@ -327,7 +344,7 @@ class Driver < Msf::Ui::Driver
 
     # Always update this, even if we didn't save anything. We do this
     # so that we don't end up saving the "makerc" command itself.
-    self.hist_last_saved = ::Reline::HISTORY.length
+    self.hist_last_saved = Readline::HISTORY.length
   end
 
   #
@@ -609,10 +626,6 @@ protected
       return false
     elsif active_module && (active_module.exploit? || active_module.evasion?)
       return false unless active_module.is_payload_compatible?(val)
-    elsif active_module && !framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
-      active_module.datastore.clear_non_user_defined
-    elsif framework && !framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
-      framework.datastore.clear_non_user_defined
     end
   end
 
@@ -689,6 +702,53 @@ protected
     end
 
     false
+  end
+
+  # Require the appropriate readline library based on the user's preference.
+  #
+  # @return [void]
+  def setup_readline
+    require 'readline'
+
+    # Only Windows requires a monkey-patched RbReadline
+    return unless Rex::Compat.is_windows
+
+    if defined?(::RbReadline) && !defined?(RbReadline.refresh_console_handle)
+      ::RbReadline.instance_eval do
+        class << self
+          alias_method :old_rl_move_cursor_relative, :_rl_move_cursor_relative
+          alias_method :old_rl_get_screen_size, :_rl_get_screen_size
+          alias_method :old_space_to_eol, :space_to_eol
+          alias_method :old_insert_some_chars, :insert_some_chars
+        end
+
+        def self.refresh_console_handle
+          # hConsoleHandle gets set only when RbReadline detects it is running on Windows.
+          # Therefore, we don't need to check Rex::Compat.is_windows, we can simply check if hConsoleHandle is nil or not.
+          @hConsoleHandle = @GetStdHandle.Call(::Readline::STD_OUTPUT_HANDLE) if @hConsoleHandle
+        end
+
+        def self._rl_move_cursor_relative(*args)
+          refresh_console_handle
+          old_rl_move_cursor_relative(*args)
+        end
+
+        def self._rl_get_screen_size(*args)
+          refresh_console_handle
+          old_rl_get_screen_size(*args)
+        end
+
+        def self.space_to_eol(*args)
+          refresh_console_handle
+          old_space_to_eol(*args)
+        end
+
+        def self.insert_some_chars(*args)
+          refresh_console_handle
+          old_insert_some_chars(*args)
+        end
+      end
+    end
   end
 end
 
